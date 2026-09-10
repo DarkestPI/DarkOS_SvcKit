@@ -1,7 +1,20 @@
 #include "base/Log.h"
 
-int main() {
-    constexpr const char *kTag = "rv1126b_ipc";
-    LOGI(kTag, "DarkOS application started");
+namespace {
+
+constexpr char kTag[] = "rv1126b_ipc";
+
+} // namespace
+
+void initialize()
+{
+    LOGI(kTag, "initialize");
+}
+
+int main()
+{
+    LOGI(kTag, "application started");
+
+    initialize();
     return 0;
 }
