@@ -1,5 +1,6 @@
 # ===== 构建产物（build / build-arm 等）=====
-/build*/
+**/build*/
+**/output/
 
 # ===== CMake 生成文件 =====
 CMakeCache.txt

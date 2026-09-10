@@ -19,6 +19,8 @@ add_library(hal_host_x86 SHARED
     ../shared/serial/serial_termios.c # 跨厂商共享 termios 串口 -> HMI_serial
 )
 
+darkos_prepare_target_output(hal_host_x86)
+
 target_link_libraries(hal_host_x86 PRIVATE
     hardware_interfaces   # 全部接口包的聚合目标（见 interfaces/CMakeLists.txt）
     x264                  # codec 模块的 H.264 软编（系统 libx264）

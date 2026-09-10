@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(${PROJECT_NAME} VERSION 0.1.0 LANGUAGES C CXX)
+project(rv1126b_ipc VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -19,12 +19,12 @@ endif()
 
 include("${DARKOS_SDK_PATH}/cmake/DarkOS.cmake")
 
-add_executable(${PROJECT_NAME}
+add_executable(rv1126b_ipc
     src/main.cpp
 )
 
-target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
+target_compile_features(rv1126b_ipc PRIVATE cxx_std_17)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE DarkOS::SvcKit)
+target_link_libraries(rv1126b_ipc PRIVATE DarkOS::SvcKit)
 
-darkos_add_application(${PROJECT_NAME})
+darkos_add_application(rv1126b_ipc)

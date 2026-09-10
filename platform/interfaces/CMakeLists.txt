@@ -20,6 +20,7 @@ foreach(pkg ${HAL_INTERFACE_PACKAGES})
     # include 根指向 interfaces/，使 <camera/xxx.h> 能按包名解析
     target_include_directories(${pkg}_interfaces INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(${pkg}_interfaces INTERFACE hardware_base)
+    add_library(DarkOS::${pkg} ALIAS ${pkg}_interfaces)
 endforeach()
 
 # 聚合目标：一次链接全部接口包（用法：target_link_libraries(x PRIVATE hardware_interfaces)）。
@@ -29,3 +30,5 @@ add_library(hardware_interfaces INTERFACE)
 foreach(pkg ${HAL_INTERFACE_PACKAGES})
     target_link_libraries(hardware_interfaces INTERFACE ${pkg}_interfaces)
 endforeach()
+
+add_library(DarkOS::HardwareInterfaces ALIAS hardware_interfaces)

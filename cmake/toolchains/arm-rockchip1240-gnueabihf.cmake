@@ -62,54 +62,6 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # ------------------------------------------------------------
-# 通用编译标志
-# 为链接器 --gc-sections 做准备
-# ------------------------------------------------------------
-set(CMAKE_C_FLAGS_INIT
-    "${CMAKE_C_FLAGS_INIT} -ffunction-sections -fdata-sections")
-
-set(CMAKE_CXX_FLAGS_INIT
-    "${CMAKE_CXX_FLAGS_INIT} -ffunction-sections -fdata-sections")
-
-# ------------------------------------------------------------
-# Release 优化
-# IPC 程序建议 -O2 更稳；想更激进可换 -O3
-# ------------------------------------------------------------
-set(CMAKE_C_FLAGS_RELEASE_INIT
-    "-O2 -DNDEBUG -ffunction-sections -fdata-sections")
-
-set(CMAKE_CXX_FLAGS_RELEASE_INIT
-    "-O2 -DNDEBUG -ffunction-sections -fdata-sections")
-
-# ------------------------------------------------------------
-# Debug / RelWithDebInfo
-# ------------------------------------------------------------
-set(CMAKE_C_FLAGS_DEBUG_INIT
-    "-O0 -g -DDEBUG -ffunction-sections -fdata-sections")
-
-set(CMAKE_CXX_FLAGS_DEBUG_INIT
-    "-O0 -g -DDEBUG -ffunction-sections -fdata-sections")
-
-set(CMAKE_C_FLAGS_RELWITHDEBINFO_INIT
-    "-O2 -g -DNDEBUG -ffunction-sections -fdata-sections")
-
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO_INIT
-    "-O2 -g -DNDEBUG -ffunction-sections -fdata-sections")
-
-# ------------------------------------------------------------
-# 链接优化
-# 删除未使用的 section
-# ------------------------------------------------------------
-set(CMAKE_EXE_LINKER_FLAGS_INIT
-    "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--gc-sections")
-
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE_INIT
-    "-Wl,--gc-sections")
-
-set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO_INIT
-    "-Wl,--gc-sections")
-
-# ------------------------------------------------------------
 # 可选：CPU 架构优化
 # 只有确认工具链默认没有带正确架构参数时才打开。
 # 否则可能和 sysroot 里的预编译库 ABI 不一致。
@@ -117,25 +69,46 @@ set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO_INIT
 set(RV1126B_ARCH_FLAGS
     "-march=armv7-a -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard")
 
-set(CMAKE_C_FLAGS_INIT
-    "${CMAKE_C_FLAGS_INIT} ${RV1126B_ARCH_FLAGS}")
-
-set(CMAKE_CXX_FLAGS_INIT
-    "${CMAKE_CXX_FLAGS_INIT} ${RV1126B_ARCH_FLAGS}")
-
-set(CMAKE_EXE_LINKER_FLAGS_INIT
-    "${CMAKE_EXE_LINKER_FLAGS_INIT} ${RV1126B_ARCH_FLAGS}")
-
 # ------------------------------------------------------------
-# 可选：LTO 链接时优化
+# 编译与链接参数
+#
+# 工具链文件可能被 CMake/try_compile 多次载入，因此这里使用确定值初始化，
+# 不引用旧值做字符串追加，避免架构参数重复。CACHE 不使用 FORCE：调用者
+# 显式传入 -DCMAKE_<LANG>_FLAGS_<CONFIG> 时仍然拥有更高优先级。
 # 链接 rockchip 预编译媒体库时可能出 LTO 插件错误。
-# 如果链接失败，就去掉下面三行。
+# 如果实际 HAL 链接失败，可通过命令行覆盖 Release flags 去掉 -flto。
 # ------------------------------------------------------------
-set(CMAKE_C_FLAGS_RELEASE_INIT
-    "${CMAKE_C_FLAGS_RELEASE_INIT} -flto")
+set(DARKOS_COMMON_COMPILE_FLAGS
+    "-ffunction-sections -fdata-sections ${RV1126B_ARCH_FLAGS}")
 
-set(CMAKE_CXX_FLAGS_RELEASE_INIT
-    "${CMAKE_CXX_FLAGS_RELEASE_INIT} -flto")
+set(CMAKE_C_FLAGS_INIT "${DARKOS_COMMON_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS_INIT "${DARKOS_COMMON_COMPILE_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-Wl,--gc-sections")
 
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE_INIT
-    "${CMAKE_EXE_LINKER_FLAGS_RELEASE_INIT} -flto")
+set(CMAKE_C_FLAGS_DEBUG
+    "-O0 -g -DDEBUG"
+    CACHE STRING "C flags for Debug")
+set(CMAKE_CXX_FLAGS_DEBUG
+    "-O0 -g -DDEBUG"
+    CACHE STRING "C++ flags for Debug")
+
+set(CMAKE_C_FLAGS_RELEASE
+    "-O2 -DNDEBUG -flto"
+    CACHE STRING "C flags for Release")
+set(CMAKE_CXX_FLAGS_RELEASE
+    "-O2 -DNDEBUG -flto"
+    CACHE STRING "C++ flags for Release")
+
+set(CMAKE_C_FLAGS_RELWITHDEBINFO
+    "-O2 -g -DNDEBUG"
+    CACHE STRING "C flags for RelWithDebInfo")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO
+    "-O2 -g -DNDEBUG"
+    CACHE STRING "C++ flags for RelWithDebInfo")
+
+set(CMAKE_C_FLAGS_MINSIZEREL
+    "-Os -DNDEBUG"
+    CACHE STRING "C flags for MinSizeRel")
+set(CMAKE_CXX_FLAGS_MINSIZEREL
+    "-Os -DNDEBUG"
+    CACHE STRING "C++ flags for MinSizeRel")

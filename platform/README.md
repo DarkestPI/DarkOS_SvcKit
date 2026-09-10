@@ -109,12 +109,12 @@ cmake -S . -B build/host_x86
 cmake --build build/host_x86
 ```
 
-### 交叉编译（rv1126，ARM 32 位）
+### 交叉编译（RV1126B，ARM 32 位）
 
 ```bash
-cmake -S . -B build/rv1126 \
+cmake -S . -B build/rv1126b \
     -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-linux-gnueabihf.cmake
-cmake --build build/rv1126
+cmake --build build/rv1126b
 ```
 
 产物（在 `build/<目标>/oem/` 下分 `bin/` 与 `lib/`）：
@@ -153,7 +153,7 @@ DARKOS_CAMERA_DEVICE=/dev/video0 \    # 指定 V4L2 节点即走 UVC 实现（ca
   坏帧会被丢弃/容错解码；若画面持续花屏，优先排查 VM 的 USB 控制器设置
   （切换 USB 3.x / xHCI 通常可解决）。
 
-**板子（rockchip 真相机）：** 把 `build/rv1126/oem/lib/*.so` 拷到板子
+**板子（rockchip 真相机）：** 把 `build/rv1126b/oem/lib/*.so` 拷到板子
 `/vendor/lib/hw/` 后直接跑 `hal_probe`（无需设环境变量），或
 `DARKOS_HAL_VARIANT=rockchip` 显式指定。
 

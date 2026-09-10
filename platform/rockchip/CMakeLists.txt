@@ -12,7 +12,7 @@
 #   ../shared/serial/serial_termios.c -> HMI_serial（跨厂商共享，始终编译）
 # 依赖 RV1126B SDK 媒体库（DARKOS_RV1126B_MEDIA_ROOT，由
 # arm-rockchip1240-gnueabihf.cmake 工具链文件给出）；未定义时只编 camera/light
-# 且不链接 rockit（旧 rv1126 工具链不可用本实现，仅为占位）。
+# 且不链接 rockit（旧 RV1126B 工具链不可用本实现，仅为占位）。
 find_package(Threads REQUIRED)
 
 set(HAL_ROCKCHIP_SRCS
@@ -36,6 +36,7 @@ if(DEFINED DARKOS_RV1126B_MEDIA_ROOT)
 endif()
 
 add_library(hal_rockchip SHARED ${HAL_ROCKCHIP_SRCS})
+darkos_prepare_target_output(hal_rockchip)
 
 # "common/mpi_sys_guard.h" 等以 rockchip/ 为根的相对引用
 target_include_directories(hal_rockchip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

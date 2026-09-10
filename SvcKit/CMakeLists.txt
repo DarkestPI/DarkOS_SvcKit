@@ -1,14 +1,21 @@
-# 启用测试和打包
-include(CTest)
-enable_testing()
-include(CPack)
+# SvcKit 只定义库目标；project()、CTest、CPack 由顶层应用决定。
+add_subdirectory(foundation)
+add_subdirectory(subsystems)
+add_subdirectory(Protocol)
 
-# 查找并管理第三方依赖
-find_package(spdlog CONFIG REQUIRED)
-find_package(GTest CONFIG REQUIRED)
+add_library(darkos_svckit INTERFACE)
+target_link_libraries(darkos_svckit INTERFACE
+    svckit_base
+    svckit_analytics
+    svckit_audio
+    svckit_media
+    svckit_networking
+    darkos_protocols
+    DarkOS::Platform
+)
+add_library(DarkOS::SvcKit ALIAS darkos_svckit)
 
-# 添加子目录，定义模块间的依赖关系
-add_subdirectory(foundation)        # 基础库，被所有上层模块依赖
-add_subdirectory(subsystems)        # 子系统，依赖foundation
-add_subdirectory(src/core)          # 引擎核心，依赖foundation和subsystems
-add_subdirectory(tests)             # 测试，链接被测试的库
+if(DARKOS_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
+    include(CTest)
+    add_subdirectory(tests)
+endif()

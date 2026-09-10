@@ -8,7 +8,7 @@ import shutil
 import argparse
 from pathlib import Path
 
-TEMPLATE_DIR = Path("./SvcKit/svckit_project_template")
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "svckit_project_template"
 PLACEHOLDER = "${PROJECT_NAME}"
 
 def replace_in_file(filepath, old, new):
@@ -52,18 +52,11 @@ def main():
                 # 忽略二进制文件
                 pass
 
-    # 4. 重命名特定文件（可选）
-    cmake_file = target_dir / "CMakeLists.txt"
-    if cmake_file.exists():
-        # 确保CMake中的项目名被正确设置
-        replace_in_file(cmake_file, "project(TEMPLATE_PROJECT)", f"project({project_name})")
-
     print(f"项目创建成功！目录: {target_dir.absolute()}")
     print("下一步:")
     print(f"  cd {target_dir}")
-    print("  mkdir build && cd build")
-    print("  cmake .. -DCMAKE_BUILD_TYPE=Release")
-    print("  cmake --build .")
+    print("  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release")
+    print("  cmake --build build -j")
 
 if __name__ == "__main__":
     main()
