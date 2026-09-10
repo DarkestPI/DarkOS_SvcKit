@@ -48,7 +48,7 @@ cmake --preset rv1126b
 cmake --build --preset rv1126b -j
 ```
 
-构建中间文件位于 `applications/my_project/build-rv1126b/`，最终产物位于
+构建中间文件位于 `applications/rv1126b_ipc/build/`，最终产物位于
 SDK 根目录的 `output/rv1126b/`。
 
 应用位于 SDK 仓库之外时，显式指定 SDK 根目录：

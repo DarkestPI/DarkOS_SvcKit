@@ -11,7 +11,7 @@
       "displayName": "RV1126B Release",
       "description": "使用 Rockchip ARM hard-float 工具链构建 Release 版本",
       "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build-rv1126b",
+      "binaryDir": "${sourceDir}/build",
       "toolchainFile": "${sourceDir}/../../cmake/toolchains/arm-rockchip1240-gnueabihf.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",

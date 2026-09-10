@@ -1,0 +1,55 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "RV1126B：配置",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--preset", "rv1126b"],
+      "options": {
+        "cwd": "${workspaceFolder}/applications/rv1126b_ipc"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "RV1126B：构建",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "rv1126b", "--parallel"],
+      "options": {
+        "cwd": "${workspaceFolder}/applications/rv1126b_ipc"
+      },
+      "dependsOn": "RV1126B：配置",
+      "dependsOrder": "sequence",
+      "problemMatcher": ["$gcc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "RV1126B：清理并重新构建",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "rv1126b", "--clean-first", "--parallel"],
+      "options": {
+        "cwd": "${workspaceFolder}/applications/rv1126b_ipc"
+      },
+      "dependsOn": "RV1126B：配置",
+      "dependsOrder": "sequence",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "RV1126B：仅清理",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "rv1126b", "--target", "clean"],
+      "options": {
+        "cwd": "${workspaceFolder}/applications/rv1126b_ipc"
+      },
+      "dependsOn": "RV1126B：配置",
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    }
+  ]
+}
