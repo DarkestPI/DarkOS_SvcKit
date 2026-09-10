@@ -1,7 +1,7 @@
 # SvcKit 只定义库目标；project()、CTest、CPack 由顶层应用决定。
 add_subdirectory(foundation)
 add_subdirectory(subsystems)
-add_subdirectory(Protocol)
+add_subdirectory(protocol)
 
 add_library(darkos_svckit INTERFACE)
 target_link_libraries(darkos_svckit INTERFACE

@@ -32,9 +32,8 @@ Checks: >
 
 # 默认先作为告警使用；CI 稳定后可按模块逐步提升为错误。
 WarningsAsErrors: ''
-HeaderFilterRegex: '^(SvcKit|platform|applications)/.*'
+HeaderFilterRegex: '.*'
 FormatStyle: file
-SystemHeaders: false
 
 CheckOptions:
   - key: bugprone-argument-comment.StrictMode

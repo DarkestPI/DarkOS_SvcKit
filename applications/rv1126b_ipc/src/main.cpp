@@ -1,7 +1,7 @@
-#include <iostream>
+#include "base/Log.h"
 
-int main()
-{
-    std::cout << "DarkOS application: rv1126b_ipc" << std::endl;
+int main() {
+    constexpr const char *kTag = "rv1126b_ipc";
+    LOGI(kTag, "DarkOS application started");
     return 0;
 }

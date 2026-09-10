@@ -15,6 +15,7 @@
       "toolchainFile": "${sourceDir}/../../cmake/toolchains/arm-rockchip1240-gnueabihf.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "DARKOS_OUTPUT_ROOT": "${sourceDir}/../../output/rv1126b"
       }
     }
