@@ -1,0 +1,41 @@
+name: CI Pipeline
+
+on: [push, pull_request]
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        build_type: [Debug, Release]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
+    - name: Configure CMake
+      run: |
+        cmake -B ${{github.workspace}}/build \
+              -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+              -DBUILD_TESTS=ON
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{ matrix.build_type }}
+
+    - name: Run Unit Tests
+      run: ctest --test-dir ${{github.workspace}}/build --output-on-failure
+
+    - name: Static Analysis (Clang-Tidy)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cmake -B ${{github.workspace}}/build-tidy \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_CXX_CLANG_TIDY="clang-tidy;-checks=*"
+        cmake --build ${{github.workspace}}/build-tidy -j 4
+
+    - name: Generate Documentation
+      if: matrix.os == 'ubuntu-latest' && github.event_name == 'push'
+      run: |
+        cmake --build ${{github.workspace}}/build --target docs

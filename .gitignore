@@ -1,0 +1,38 @@
+# ===== 构建产物（build / build-arm 等）=====
+/build*/
+
+# ===== CMake 生成文件 =====
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+*.cmake.user
+
+# ===== 编译数据库（clangd 使用，含本机绝对路径，不入库）=====
+compile_commands.json
+
+# ===== 编译中间/目标文件 =====
+*.o
+*.obj
+*.d
+*.a
+*.so
+*.so.*
+*.dylib
+*.exe
+*.out
+
+# ===== 编辑器 / IDE =====
+# .vscode/
+.idea/
+.zcode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ===== clangd 缓存 =====
+.cache/
+
+# ===== 不用的代码 =====
+.legacy
