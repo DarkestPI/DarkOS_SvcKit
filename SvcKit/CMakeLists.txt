@@ -1,5 +1,5 @@
 # SvcKit 只定义库目标；project()、CTest、CPack 由顶层应用决定。
-add_subdirectory(foundation)
+add_subdirectory(base)
 add_subdirectory(subsystems)
 add_subdirectory(protocol)
 
