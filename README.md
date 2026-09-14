@@ -63,8 +63,22 @@ cmake -S . -B build \
 
 - `DARKOS_BUILD_TESTS`：构建测试，默认 `OFF`；
 - `DARKOS_BUILD_EXAMPLES`：构建 SDK 示例，默认 `OFF`；
-- `DARKOS_BUILD_HAL_IMPLEMENTATIONS`：构建 host_x86 或 Rockchip HAL，默认 `OFF`；
+- `DARKOS_BUILD_HAL_IMPLEMENTATIONS`：构建选中平台的 HAL，默认 `OFF`；
+- `DARKOS_PLATFORM`：选择 HAL 平台，默认 `auto`；当前可自动识别
+  `ubuntu_x86_64` 和使用 RV1126B 工具链的 `rockchip`；
 - `DARKOS_BUILD_PROTOCOL_IMPLEMENTATIONS`：构建协议实现，默认 `OFF`。
+
+需要显式选择平台时，例如：
+
+```bash
+cmake -S . -B build \
+    -DDARKOS_PLATFORM=rockchip \
+    -DDARKOS_BUILD_HAL_IMPLEMENTATIONS=ON
+```
+
+`allwinner`、`artosyn`、`ingenic`、`novatek`、`sunplus` 已保留为平台名，
+但只有在对应目录提供 `CMakeLists.txt` 和实现后才能启用。未启用 HAL 实现时，
+这些未完成平台不会影响公共接口和 SvcKit 的构建。
 
 骨架阶段缺少源码的组件使用 `INTERFACE` 目标占位。应用统一链接
 `DarkOS::SvcKit`，也可以按需链接 `DarkOS::Media`、`DarkOS::Networking`、
