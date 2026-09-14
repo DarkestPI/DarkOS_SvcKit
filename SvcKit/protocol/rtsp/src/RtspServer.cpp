@@ -12,7 +12,7 @@
 #include "RtspConnection.h"
 #include "RtspServerImpl.h"
 #include "base/EventLoop.h"
-#include "base/Log.h"
+#include <svc_log.h>
 #include "stream/SourceSink.h"
 
 namespace darkos {
@@ -24,7 +24,7 @@ RtspServerImpl::RtspServerImpl(EventLoop *loop, const RtspServerOptions &opts)
     if (opts_.port == 0)
         opts_.port = 8554;
     if (!opts_.authUser.empty() && opts_.authPasswd.empty())
-        LOGW(kTag, "auth user set but passwd empty, digest auth disabled");
+        SVC_LOGW(kTag, "auth user set but passwd empty, digest auth disabled");
 }
 
 RtspServerImpl::~RtspServerImpl() {
@@ -41,7 +41,7 @@ bool RtspServerImpl::addStream(const char *path, Source *source, MediaCodec code
     if (path == nullptr || source == nullptr || path[0] == '\0' || path[0] == '/')
         return false;
     if (streams_.count(path) != 0) {
-        LOGW(kTag, "stream \"%s\" already registered", path);
+        SVC_LOGW(kTag, "stream \"%s\" already registered", path);
         return false;
     }
     RtspStreamInfo info;
@@ -51,9 +51,9 @@ bool RtspServerImpl::addStream(const char *path, Source *source, MediaCodec code
      * 注册仍成功，DESCRIBE 回 500（打包器实现随 stream 层逐步落地） */
     info.sdpPacketizer.reset(createRtpPacketizer(codec));
     if (info.sdpPacketizer == nullptr)
-        LOGW(kTag, "stream \"%s\": no packetizer for codec %u yet", path, (unsigned)codec);
+        SVC_LOGW(kTag, "stream \"%s\": no packetizer for codec %u yet", path, (unsigned)codec);
     streams_.emplace(path, std::move(info));
-    LOGI(kTag, "stream registered: rtsp://<ip>:%u/%s", opts_.port, path);
+    SVC_LOGI(kTag, "stream registered: rtsp://<ip>:%u/%s", opts_.port, path);
     return true;
 }
 
@@ -63,7 +63,7 @@ int RtspServerImpl::start() {
     listenFd_ = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (listenFd_ < 0) {
         int rc = -errno;
-        LOGE(kTag, "create listen socket failed: %s", strerror(-rc));
+        SVC_LOGE(kTag, "create listen socket failed: %s", strerror(-rc));
         return rc;
     }
     int one = 1;
@@ -74,18 +74,18 @@ int RtspServerImpl::start() {
     addr.sin_port = htons(opts_.port);
     if (bind(listenFd_, (struct sockaddr *)&addr, sizeof(addr)) != 0 || listen(listenFd_, 8) != 0) {
         int rc = -errno;
-        LOGE(kTag, "bind/listen port %u failed: %s", opts_.port, strerror(-rc));
+        SVC_LOGE(kTag, "bind/listen port %u failed: %s", opts_.port, strerror(-rc));
         close(listenFd_);
         listenFd_ = -1;
         return rc;
     }
     if (!loop_->watchFd(listenFd_, EPOLLIN, [this](uint32_t) { onAccept(); })) {
-        LOGE(kTag, "watch listen fd failed");
+        SVC_LOGE(kTag, "watch listen fd failed");
         close(listenFd_);
         listenFd_ = -1;
         return -EIO;
     }
-    LOGI(kTag, "RTSP server listening on 0.0.0.0:%u", opts_.port);
+    SVC_LOGI(kTag, "RTSP server listening on 0.0.0.0:%u", opts_.port);
     return 0;
 }
 

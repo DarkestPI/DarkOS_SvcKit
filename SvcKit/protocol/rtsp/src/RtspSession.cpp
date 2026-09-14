@@ -13,7 +13,7 @@
 #include <unistd.h>
 
 #include "base/EventLoop.h"
-#include "base/Log.h"
+#include <svc_log.h>
 #include "base/TimeUtil.h"
 
 #include "RtspConnection.h"
@@ -51,7 +51,7 @@ RtspSession::~RtspSession() {
     delete packetizer_;
     delete rtcp_;
     delete sender_;
-    LOGI(kTag, "session %s teardown", id_.c_str());
+    SVC_LOGI(kTag, "session %s teardown", id_.c_str());
 }
 
 uint32_t RtspSession::ssrc() const {
@@ -102,7 +102,7 @@ bool RtspSession::setupUdp(const sockaddr_in &clientAddr, uint16_t clientRtpPort
     rtcpFd_ = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (rtpFd_ < 0 || rtcpFd_ < 0) {
         errReason = strerror(errno);
-        LOGE(kTag, "session %s: create udp socket failed: %s", id_.c_str(), errReason.c_str());
+        SVC_LOGE(kTag, "session %s: create udp socket failed: %s", id_.c_str(), errReason.c_str());
         return false;
     }
     /* 端口 0 让内核分配，getsockname 取回响应给客户端（server_port） */
@@ -113,7 +113,7 @@ bool RtspSession::setupUdp(const sockaddr_in &clientAddr, uint16_t clientRtpPort
     if (bind(rtpFd_, (struct sockaddr *)&local, sizeof(local)) != 0 ||
         bind(rtcpFd_, (struct sockaddr *)&local, sizeof(local)) != 0) {
         errReason = strerror(errno);
-        LOGE(kTag, "session %s: bind failed: %s", id_.c_str(), errReason.c_str());
+        SVC_LOGE(kTag, "session %s: bind failed: %s", id_.c_str(), errReason.c_str());
         return false;
     }
     socklen_t len = sizeof(local);
@@ -182,7 +182,7 @@ void RtspSession::sendRtcp(const uint8_t *data, size_t size) {
     } else {
         if (sendto(rtcpFd_, data, size, MSG_NOSIGNAL, (struct sockaddr *)&clientRtcp_,
                    sizeof(clientRtcp_)) < 0)
-            LOGW(kTag, "session %s: send rtcp failed: %s", id_.c_str(), strerror(errno));
+            SVC_LOGW(kTag, "session %s: send rtcp failed: %s", id_.c_str(), strerror(errno));
     }
 }
 
@@ -191,7 +191,7 @@ bool RtspSession::ensurePipeline() {
         return true;
     packetizer_ = createRtpPacketizer(codec_);
     if (packetizer_ == nullptr) {
-        LOGE(kTag, "session %s: no packetizer for codec %u", id_.c_str(), (unsigned)codec_);
+        SVC_LOGE(kTag, "session %s: no packetizer for codec %u", id_.c_str(), (unsigned)codec_);
         return false;
     }
     packetizer_->attach(sender_, clockRateHz_);
@@ -209,7 +209,7 @@ bool RtspSession::play() {
      * 解码的 P 帧花屏（参考 live555 行为；PAUSE 后解码器状态可能过期，
      * 重新 PLAY 同样置位） */
     awaitIdr_ = true;
-    LOGI(kTag, "session %s: play (%s, await idr)", id_.c_str(), tcp_ ? "tcp" : "udp");
+    SVC_LOGI(kTag, "session %s: play (%s, await idr)", id_.c_str(), tcp_ ? "tcp" : "udp");
     pullNext();
     return true;
 }
@@ -218,7 +218,7 @@ void RtspSession::pause() {
     if (!playing_)
         return;
     playing_ = false;
-    LOGI(kTag, "session %s: pause", id_.c_str());
+    SVC_LOGI(kTag, "session %s: pause", id_.c_str());
     /* 挂起的 getNextFrame 请求无法撤销：帧到达时被回调丢弃，不欠新请求 */
 }
 
@@ -239,7 +239,7 @@ void RtspSession::pullNext() {
         } else {
             if (self->awaitIdr_) {
                 self->awaitIdr_ = false;
-                LOGI(kTag, "session %s: keyframe arrived, streaming starts",
+                SVC_LOGI(kTag, "session %s: keyframe arrived, streaming starts",
                      self->id_.c_str());
             }
             self->packetizer_->packetize(pkt);

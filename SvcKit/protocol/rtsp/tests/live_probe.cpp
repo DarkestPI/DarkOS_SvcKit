@@ -34,7 +34,7 @@
 
 #include "base/BufferPool.h"
 #include "base/EventLoop.h"
-#include "base/Log.h"
+#include <svc_log.h>
 #include "base/Thread.h"
 #include "rtsp/RtspServer.h"
 #include "stream/SourceSink.h"
@@ -87,12 +87,12 @@ class HalFrameSource : public Source {
         fmt.gop = kGop;
         int rc = codec_->ops->set_format(codec_, &fmt);
         if (rc != 0) {
-            LOGE(kTag, "codec set_format failed: %d", rc);
+            SVC_LOGE(kTag, "codec set_format failed: %d", rc);
             return rc;
         }
         rc = codec_->ops->start(codec_);
         if (rc != 0) {
-            LOGE(kTag, "codec start failed: %d", rc);
+            SVC_LOGE(kTag, "codec start failed: %d", rc);
             return rc;
         }
         rc = camera_->ops->set_frame_callback(camera_, &HalFrameSource::onFrame, this);
@@ -100,7 +100,7 @@ class HalFrameSource : public Source {
             return rc;
         rc = camera_->ops->start(camera_);
         if (rc != 0) {
-            LOGE(kTag, "camera start failed: %d", rc);
+            SVC_LOGE(kTag, "camera start failed: %d", rc);
             return rc;
         }
         return 0;
@@ -153,7 +153,7 @@ class HalFrameSource : public Source {
 
         int rc = self->codec_->ops->encode(self->codec_, &in, &pkt, 0);
         if (rc != 0 || pkt.size == 0) {
-            LOGE(kTag, "encode failed: %d", rc);
+            SVC_LOGE(kTag, "encode failed: %d", rc);
             return 0;
         }
 
@@ -220,15 +220,15 @@ int main() {
     const hw_module_t *codec_mod = nullptr;
     if (hw_get_module(CAMERA_HARDWARE_MODULE_ID, &camera_mod) != 0 ||
         hw_get_module(MEDIA_CODEC_HARDWARE_MODULE_ID, &codec_mod) != 0) {
-        LOGE(kTag, "hw_get_module failed（检查 DARKOS_HAL_VARIANT / DARKOS_HAL_LIBRARY_PATH）");
+        SVC_LOGE(kTag, "hw_get_module failed（检查 DARKOS_HAL_VARIANT / DARKOS_HAL_LIBRARY_PATH）");
         return 1;
     }
-    LOGI(kTag, "HAL: %s | %s", camera_mod->name, codec_mod->name);
+    SVC_LOGI(kTag, "HAL: %s | %s", camera_mod->name, codec_mod->name);
 
     camera_device_t *camera = nullptr;
     codec_device_t *codec = nullptr;
     if (camera_open(camera_mod, &camera) != 0 || codec_open(codec_mod, &codec) != 0) {
-        LOGE(kTag, "open camera/codec device failed");
+        SVC_LOGE(kTag, "open camera/codec device failed");
         return 1;
     }
 
@@ -238,16 +238,16 @@ int main() {
     cam_fmt.pixel_format = CAMERA_PIX_FMT_NV12;
     cam_fmt.fps = kFps;
     if (camera->ops->set_format(camera, &cam_fmt) != 0) {
-        LOGE(kTag, "camera set_format failed");
+        SVC_LOGE(kTag, "camera set_format failed");
         return 1;
     }
     /* 取回实际生效的格式：UVC 摄像头可能就近调整了分辨率/帧率，
      * 编码器与缓冲必须按实际值配置 */
     if (camera->ops->get_format(camera, &cam_fmt) != 0) {
-        LOGE(kTag, "camera get_format failed");
+        SVC_LOGE(kTag, "camera get_format failed");
         return 1;
     }
-    LOGI(kTag, "camera format: %ux%u@%ufps", cam_fmt.width, cam_fmt.height, cam_fmt.fps);
+    SVC_LOGI(kTag, "camera format: %ux%u@%ufps", cam_fmt.width, cam_fmt.height, cam_fmt.fps);
 
     EventLoop *loop = EventLoop::create();
     auto *source = new HalFrameSource(loop, camera, codec, cam_fmt.width, cam_fmt.height);
@@ -256,19 +256,19 @@ int main() {
 
     RtspServer *server = RtspServer::create(loop, kRtspPort);
     if (!server->addStream("live", source, MediaCodec::kH264)) {
-        LOGE(kTag, "addStream failed");
+        SVC_LOGE(kTag, "addStream failed");
         return 1;
     }
     if (server->start() != 0) {
-        LOGE(kTag, "RTSP server start failed");
+        SVC_LOGE(kTag, "RTSP server start failed");
         return 1;
     }
-    LOGI(kTag, "RTSP serving: rtsp://0.0.0.0:%u/live (%ux%u@%ufps H.264)", kRtspPort, cam_fmt.width,
+    SVC_LOGI(kTag, "RTSP serving: rtsp://0.0.0.0:%u/live (%ux%u@%ufps H.264)", kRtspPort, cam_fmt.width,
          cam_fmt.height, cam_fmt.fps);
 
     /* 周期打印帧统计，验证拉流期间交付不中断 */
     loop->scheduleEvery(5ull * 1000 * 1000 * 1000, 5ull * 1000 * 1000 * 1000, [source] {
-        LOGI(kTag, "stats: captured=%llu delivered=%llu dropPool=%llu dropIdle=%llu",
+        SVC_LOGI(kTag, "stats: captured=%llu delivered=%llu dropPool=%llu dropIdle=%llu",
              (unsigned long long)source->captured(), (unsigned long long)source->delivered(),
              (unsigned long long)source->droppedPool(), (unsigned long long)source->droppedIdle());
     });
@@ -276,7 +276,7 @@ int main() {
     Thread sigThread("probe.sig", [loop, &sigs] {
         int sig = 0;
         sigwait(&sigs, &sig);
-        LOGI(kTag, "signal %d received, quitting", sig);
+        SVC_LOGI(kTag, "signal %d received, quitting", sig);
         loop->post([loop] { loop->quit(); });
     });
 
@@ -291,6 +291,6 @@ int main() {
 
     codec_close(codec);
     camera_close(camera);
-    LOGI(kTag, "bye");
+    SVC_LOGI(kTag, "bye");
     return 0;
 }

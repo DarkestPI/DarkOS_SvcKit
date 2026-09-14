@@ -20,7 +20,7 @@
 
 #include "base/EventLoop.h"
 #include "base/Hash.h"
-#include "base/Log.h"
+#include <svc_log.h>
 #include "base/TimeUtil.h"
 
 #include "RtspConnection.h"
@@ -239,7 +239,7 @@ void RtspConnection::start() {
 void RtspConnection::onWatchdog() {
     if (timeoutNs_ == 0 || monoNowNs() - lastActivityNs_ <= timeoutNs_)
         return;
-    LOGW(kTag, "%s: idle over %us timeout, disconnect", peerDesc_.c_str(),
+    SVC_LOGW(kTag, "%s: idle over %us timeout, disconnect", peerDesc_.c_str(),
          (unsigned)(timeoutNs_ / 1000000000ULL));
     disconnect();
 }
@@ -249,7 +249,7 @@ void RtspConnection::rearmWatch() {
     if (txPending_)
         events |= EPOLLOUT;
     if (!loop_->watchFd(fd_, events, [this](uint32_t ev) { onFd(ev); })) {
-        LOGE(kTag, "%s: watchFd failed", peerDesc_.c_str());
+        SVC_LOGE(kTag, "%s: watchFd failed", peerDesc_.c_str());
         disconnect();
         return;
     }
@@ -281,11 +281,11 @@ void RtspConnection::onFd(uint32_t events) {
             if (closed_)
                 return;
         } else if (n == 0) {
-            LOGI(kTag, "%s: client closed", peerDesc_.c_str());
+            SVC_LOGI(kTag, "%s: client closed", peerDesc_.c_str());
             disconnect();
             return;
         } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            LOGW(kTag, "%s: recv failed: %s", peerDesc_.c_str(), strerror(errno));
+            SVC_LOGW(kTag, "%s: recv failed: %s", peerDesc_.c_str(), strerror(errno));
             disconnect();
             return;
         }
@@ -301,7 +301,7 @@ void RtspConnection::sendBytes(const uint8_t *data, size_t size) {
      * 连接销毁经 post 延迟，此处断开是安全的）。VLC/NVR 会自动重连 */
     size_t txMax = server_->options().txMaxPendingBytes;
     if (txMax != 0 && txBuf_.size() + size > txMax) {
-        LOGW(kTag, "%s: tx backlog %zu(+%zu) exceeds %zu, disconnect slow client",
+        SVC_LOGW(kTag, "%s: tx backlog %zu(+%zu) exceeds %zu, disconnect slow client",
              peerDesc_.c_str(), txBuf_.size(), size, txMax);
         disconnect();
         return;
@@ -329,7 +329,7 @@ void RtspConnection::flushTx() {
             }
             return;
         }
-        LOGW(kTag, "%s: send failed: %s", peerDesc_.c_str(), strerror(errno));
+        SVC_LOGW(kTag, "%s: send failed: %s", peerDesc_.c_str(), strerror(errno));
         disconnect();
         return;
     }
@@ -357,7 +357,7 @@ void RtspConnection::disconnect() {
         fd_ = -1;
     }
     closeAllSessions();
-    LOGI(kTag, "%s: disconnected", peerDesc_.c_str());
+    SVC_LOGI(kTag, "%s: disconnected", peerDesc_.c_str());
     server_->removeConnection(this); /* post 延迟销毁本对象 */
 }
 
@@ -391,7 +391,7 @@ void RtspConnection::parseRx() {
         auto hdrEnd = rxBuf_.find("\r\n\r\n");
         if (hdrEnd == std::string::npos) {
             if (rxBuf_.size() > kMaxRequestBytes) {
-                LOGW(kTag, "%s: request too large, drop connection", peerDesc_.c_str());
+                SVC_LOGW(kTag, "%s: request too large, drop connection", peerDesc_.c_str());
                 disconnect();
             }
             return;
@@ -460,13 +460,13 @@ void RtspConnection::dispatchInterleaved(int channel, const uint8_t *data, size_
         }
     }
     /* 偶数通道是客户端→服务器的 RTP（出流场景不出现）；无会话的帧丢弃 */
-    LOGD(kTag, "%s: drop interleaved frame channel=%d len=%zu", peerDesc_.c_str(), channel, len);
+    SVC_LOGD(kTag, "%s: drop interleaved frame channel=%d len=%zu", peerDesc_.c_str(), channel, len);
 }
 
 /* ------------------------------ 方法 ----------------------------------- */
 
 void RtspConnection::handleRequest(const Request &req) {
-    LOGD(kTag, "%s: %s %s (CSeq %s)", peerDesc_.c_str(), req.method.c_str(), req.url.c_str(),
+    SVC_LOGD(kTag, "%s: %s %s (CSeq %s)", peerDesc_.c_str(), req.method.c_str(), req.url.c_str(),
          req.cseq.c_str());
     touchActivity();
 
@@ -477,7 +477,7 @@ void RtspConnection::handleRequest(const Request &req) {
         if (!checkAuthorization(req))
             return; /* 已回 401 挑战，等客户端带凭证重试 */
         authOk_ = true;
-        LOGI(kTag, "%s: digest auth ok (user=%s)", peerDesc_.c_str(), opts.authUser.c_str());
+        SVC_LOGI(kTag, "%s: digest auth ok (user=%s)", peerDesc_.c_str(), opts.authUser.c_str());
     }
 
     if (req.method == "OPTIONS")
@@ -620,7 +620,7 @@ void RtspConnection::onSetup(const Request &req) {
     }
 
     sessions_[session->id()] = session;
-    LOGI(kTag, "%s: setup session %s (%s)", peerDesc_.c_str(), session->id().c_str(),
+    SVC_LOGI(kTag, "%s: setup session %s (%s)", peerDesc_.c_str(), session->id().c_str(),
          spec.tcp ? "tcp" : "udp");
     /* timeout 值与超时巡检一致（会话保活语义见 readme） */
     char sessionHdr[48];
@@ -727,7 +727,7 @@ void RtspConnection::onGetOrSetParameter(const Request &req) {
         respond(200, "OK", req.cseq, std::string());
         return;
     }
-    LOGW(kTag, "%s: SET_PARAMETER with unsupported body, reject 406", peerDesc_.c_str());
+    SVC_LOGW(kTag, "%s: SET_PARAMETER with unsupported body, reject 406", peerDesc_.c_str());
     respond(406, "Not Acceptable", req.cseq, std::string());
 }
 

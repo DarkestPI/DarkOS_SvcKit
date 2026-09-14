@@ -19,7 +19,7 @@
 #include <unistd.h>
 
 #include "base/EventLoop.h"
-#include "base/Log.h"
+#include <svc_log.h>
 #include "control/ControlService.h"
 #include "control/Events.h" /* kParamUart */
 
@@ -73,7 +73,7 @@ class UartAdapterImpl : public UartAdapter {
         if (!loop_->watchFd(fd_, EPOLLIN, [this](uint32_t ev) { onReadable(ev); }))
             return -1;
         watching_ = true;
-        LOGI(kTag, "started: fd=%d", fd_);
+        SVC_LOGI(kTag, "started: fd=%d", fd_);
         return 0;
     }
 
@@ -82,21 +82,21 @@ class UartAdapterImpl : public UartAdapter {
             return;
         loop_->unwatchFd(fd_);
         watching_ = false;
-        LOGI(kTag, "stopped");
+        SVC_LOGI(kTag, "stopped");
     }
 
   private:
     /* fd 可读（loop 线程）：read 排到 EAGAIN，字节喂给行缓冲 */
     void onReadable(uint32_t events) {
         if (events & (EPOLLERR | EPOLLHUP))
-            LOGW(kTag, "fd=%d: events=0x%x", fd_, events);
+            SVC_LOGW(kTag, "fd=%d: events=0x%x", fd_, events);
 
         char buf[128];
         for (;;) {
             ssize_t n = read(fd_, buf, sizeof(buf));
             if (n < 0) {
                 if (errno != EAGAIN && errno != EWOULDBLOCK)
-                    LOGE(kTag, "read failed: %s", strerror(errno));
+                    SVC_LOGE(kTag, "read failed: %s", strerror(errno));
                 break;
             }
             if (n == 0)
@@ -131,7 +131,7 @@ class UartAdapterImpl : public UartAdapter {
                 continue;
             }
             if (lineLen_ >= kLineMax - 1) {
-                LOGW(kTag, "line over %zu bytes, resync", kLineMax - 1);
+                SVC_LOGW(kTag, "line over %zu bytes, resync", kLineMax - 1);
                 discarding_ = true;
                 continue;
             }
@@ -148,10 +148,10 @@ class UartAdapterImpl : public UartAdapter {
             ssize_t n = write(fd_, out.data() + off, out.size() - off);
             if (n < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    LOGW(kTag, "response truncated（%zu/%zu bytes sent）", off, out.size());
+                    SVC_LOGW(kTag, "response truncated（%zu/%zu bytes sent）", off, out.size());
                     break;
                 }
-                LOGE(kTag, "write failed: %s", strerror(errno));
+                SVC_LOGE(kTag, "write failed: %s", strerror(errno));
                 break;
             }
             off += (size_t)n;

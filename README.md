@@ -66,6 +66,8 @@ cmake -S . -B build \
 - `DARKOS_BUILD_HAL_IMPLEMENTATIONS`：构建选中平台的 HAL，默认 `OFF`；
 - `DARKOS_PLATFORM`：选择 HAL 平台，默认 `auto`；当前可自动识别
   `ubuntu_x86_64` 和使用 RV1126B 工具链的 `rockchip`；
+- `DARKOS_BUILD_SECURITY_COMPONENTS`：构建 `svc_crypto` 和 `svc_keystore`，
+  默认 `OFF`；启用后需要 OpenSSL `libcrypto`；
 - `DARKOS_BUILD_PROTOCOL_IMPLEMENTATIONS`：构建协议实现，默认 `OFF`。
 
 需要显式选择平台时，例如：

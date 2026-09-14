@@ -24,7 +24,7 @@
 #include <unistd.h>
 
 #include "base/EventLoop.h"
-#include "base/Log.h"
+#include <svc_log.h>
 #include "control/ControlService.h"
 #include "peripheral/SerialPort.h"
 #include "uart/UartAdapter.h"
@@ -39,9 +39,9 @@ int g_failures = 0;
 #define CHECK(cond, msg)                                                                           \
     do {                                                                                           \
         if (cond) {                                                                                \
-            LOGI(kTag, "PASS: %s", msg);                                                           \
+            SVC_LOGI(kTag, "PASS: %s", msg);                                                           \
         } else {                                                                                   \
-            LOGE(kTag, "FAIL: %s", msg);                                                           \
+            SVC_LOGE(kTag, "FAIL: %s", msg);                                                           \
             g_failures++;                                                                          \
         }                                                                                          \
     } while (0)
@@ -50,14 +50,14 @@ int g_failures = 0;
 std::string transact(int master, const std::string &cmd) {
     std::string req = cmd + "\n";
     if (write(master, req.data(), req.size()) != (ssize_t)req.size())
-        LOGE(kTag, "write master failed: %s", strerror(errno));
+        SVC_LOGE(kTag, "write master failed: %s", strerror(errno));
 
     std::string resp;
     char buf[256];
     for (;;) {
         struct pollfd pfd = {master, POLLIN, 0};
         if (poll(&pfd, 1, 2000) <= 0) {
-            LOGE(kTag, "timeout waiting response of \"%s\"", cmd.c_str());
+            SVC_LOGE(kTag, "timeout waiting response of \"%s\"", cmd.c_str());
             break;
         }
         ssize_t n = read(master, buf, sizeof(buf));
@@ -84,7 +84,7 @@ int main() {
     char dirTemplate[] = "/tmp/uart_probe.XXXXXX";
     const char *settingsDir = mkdtemp(dirTemplate);
     if (settingsDir == NULL) {
-        LOGE(kTag, "mkdtemp failed: %s", strerror(errno));
+        SVC_LOGE(kTag, "mkdtemp failed: %s", strerror(errno));
         return 1;
     }
     ControlService &cs = ControlService::instance();
@@ -101,31 +101,31 @@ int main() {
         ParamMeta{"device.fw", ParamType::kString, false, false, ParamApply::kImmediate, 0, 32},
         "v1.0.0");
     if (cs.start(settingsDir) != 0) {
-        LOGE(kTag, "control service start failed");
+        SVC_LOGE(kTag, "control service start failed");
         return 1;
     }
 
     /* PTY 主从对：adapter 挂从端 */
     int master = posix_openpt(O_RDWR | O_NOCTTY);
     if (master < 0 || grantpt(master) != 0 || unlockpt(master) != 0) {
-        LOGE(kTag, "openpty failed: %s", strerror(errno));
+        SVC_LOGE(kTag, "openpty failed: %s", strerror(errno));
         return 1;
     }
     char *slave = ptsname(master);
     if (slave == NULL) {
-        LOGE(kTag, "ptsname failed");
+        SVC_LOGE(kTag, "ptsname failed");
         return 1;
     }
 
     EventLoop *loop = EventLoop::create();
     SerialPort *serial = SerialPort::open(slave, 115200);
     if (serial == nullptr) {
-        LOGE(kTag, "serial open failed (pty %s)", slave);
+        SVC_LOGE(kTag, "serial open failed (pty %s)", slave);
         return 1;
     }
     UartAdapter *uart = UartAdapter::create(loop, serial->fd());
     if (uart->start() != 0) {
-        LOGE(kTag, "uart start failed (pty %s)", slave);
+        SVC_LOGE(kTag, "uart start failed (pty %s)", slave);
         return 1;
     }
     std::thread loopThread([loop] { loop->run(); });
@@ -204,8 +204,8 @@ int main() {
     rmdir(settingsDir);
 
     if (g_failures == 0)
-        LOGI(kTag, "ALL PASS");
+        SVC_LOGI(kTag, "ALL PASS");
     else
-        LOGE(kTag, "%d FAILURES", g_failures);
+        SVC_LOGE(kTag, "%d FAILURES", g_failures);
     return g_failures == 0 ? 0 : 1;
 }

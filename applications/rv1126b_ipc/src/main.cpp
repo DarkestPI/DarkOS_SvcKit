@@ -1,4 +1,4 @@
-#include "base/Log.h"
+#include <svc_log.h>
 
 namespace {
 
@@ -8,12 +8,12 @@ constexpr char kTag[] = "rv1126b_ipc";
 
 void initialize()
 {
-    LOGI(kTag, "initialize");
+    SVC_LOGI(kTag, "initialize");
 }
 
 int main()
 {
-    LOGI(kTag, "application started");
+    SVC_LOGI(kTag, "application started");
 
     initialize();
     return 0;

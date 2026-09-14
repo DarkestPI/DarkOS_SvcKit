@@ -15,7 +15,14 @@ option(DARKOS_BUILD_TESTS "Build DarkOS SDK tests" OFF)
 option(DARKOS_BUILD_EXAMPLES "Build DarkOS SDK examples" OFF)
 option(DARKOS_BUILD_HAL_IMPLEMENTATIONS "Build the selected platform HAL implementation" OFF)
 option(DARKOS_BUILD_PROTOCOL_IMPLEMENTATIONS "Build protocol implementations instead of skeleton targets" OFF)
+option(DARKOS_BUILD_SECURITY_COMPONENTS "Build SvcKit crypto and keystore components" OFF)
 option(DARKOS_ENABLE_OUTPUT_LAYOUT "Use the DarkOS bin/lib/etc output layout" ON)
+
+# 必须在调用方的顶层目录启用 CTest，否则子目录中的 add_test() 虽然能生成
+# 测试程序，但从 Application 构建目录执行 ctest 时无法发现测试。
+if(DARKOS_BUILD_TESTS)
+    enable_testing()
+endif()
 
 # 所有 Application 共用的发布根目录。默认组装到仓库根 output/，也可以通过
 # -DDARKOS_OUTPUT_ROOT=/path/to/rootfs 覆盖；交叉编译建议使用 output/<board>。

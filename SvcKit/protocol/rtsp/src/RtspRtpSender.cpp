@@ -10,7 +10,7 @@
 
 #include <random>
 
-#include "base/Log.h"
+#include <svc_log.h>
 #include "base/TimeUtil.h"
 
 #include "RtspRtpSender.h"
@@ -87,7 +87,7 @@ bool RtspRtpSender::sendRtp(const uint8_t *payload, size_t payloadSize, uint32_t
         msg.msg_iovlen = 2;
         ok = sendmsg(udpFd_, &msg, MSG_NOSIGNAL) >= 0;
         if (!ok)
-            LOGW(kTag, "sendmsg failed: %s", strerror(errno));
+            SVC_LOGW(kTag, "sendmsg failed: %s", strerror(errno));
     }
 
     if (ok && rtcp_ != nullptr)

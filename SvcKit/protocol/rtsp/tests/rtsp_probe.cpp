@@ -30,7 +30,7 @@
 
 #include "base/EventLoop.h"
 #include "base/Hash.h"
-#include "base/Log.h"
+#include <svc_log.h>
 #include "base/Thread.h"
 #include "base/TimeUtil.h"
 #include "rtsp/RtspServer.h"
@@ -127,7 +127,7 @@ static int connectToServer(uint16_t port = kPort) {
     addr.sin_port = htons(port);
     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        LOGE(kTag, "connect failed: %s", strerror(errno));
+        SVC_LOGE(kTag, "connect failed: %s", strerror(errno));
         close(fd);
         return -1;
     }
@@ -253,7 +253,7 @@ int main() {
     RtspServer *server = RtspServer::create(loop, kPort);
     FakeSource source(loop);
     if (!server->addStream("live", &source, MediaCodec::kH264)) {
-        LOGE(kTag, "addStream failed");
+        SVC_LOGE(kTag, "addStream failed");
         return 1;
     }
     CHECK(server->start() == 0, "main server listens");

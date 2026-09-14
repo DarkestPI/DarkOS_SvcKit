@@ -13,5 +13,6 @@
 ├── media           # 多媒体编解码
 ├── sensors         # 传感器（光敏/温度/加速度等）
 ├── serial          # 串口
+├── security        # 安全接口
 └── wifi            # WIFI 功能
 ```
