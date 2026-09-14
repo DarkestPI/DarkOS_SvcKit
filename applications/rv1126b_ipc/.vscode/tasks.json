@@ -5,7 +5,7 @@
       "label": "RV1126B：配置",
       "type": "shell",
       "command": "cmake",
-      "args": ["--preset", "rv1126b"],
+      "args": ["--preset", "rv1126b_ipc"],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -15,7 +15,7 @@
       "label": "RV1126B：构建",
       "type": "shell",
       "command": "cmake",
-      "args": ["--build", "--preset", "rv1126b", "--parallel"],
+      "args": ["--build", "--preset", "rv1126b_ipc", "--parallel"],
       "options": {
         "cwd": "${workspaceFolder}"
       },
