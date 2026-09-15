@@ -26,6 +26,7 @@ cmake -S . -B build/host \
 
 - `ubuntu_x86_64`：Ubuntu x86-64 主机参考实现
 - `rockchip`：瑞芯微
+- `gokemicro`：国科微
 - `allwinner`：全志
 - `artosyn`：库芯微
 - `ingenic`：北京君正
