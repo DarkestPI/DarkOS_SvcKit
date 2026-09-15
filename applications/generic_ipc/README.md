@@ -28,6 +28,10 @@ output/generic_ipc/
 ./output/generic_ipc/bin/generic_ipc
 ```
 
+启动时还会通过 `hw_get_module()` 从同一输出树的 `lib/hal.host_x86.so` 加载
+Camera、Codec、Audio 和 Serial 模块。`libhardware` 会自动搜索可执行文件旁边的
+`../lib`，所以使用标准 `bin/lib/etc` 布局时不需要设置额外环境变量。
+
 也可以使用环境变量统一替换配置目录，或分别通过命令行覆盖配置文件：
 
 ```bash
@@ -36,6 +40,14 @@ DARKOS_CONFIG_DIR=/path/to/etc ./output/generic_ipc/bin/generic_ipc
 ./output/generic_ipc/bin/generic_ipc \
   --board-config /path/to/board.json \
   --app-config /path/to/app.json
+```
+
+HAL 不在标准布局中时，可以覆盖 variant 和搜索目录：
+
+```bash
+DARKOS_HAL_VARIANT=host_x86 \
+DARKOS_HAL_LIBRARY_PATH=/path/to/hal/lib \
+./output/generic_ipc/bin/generic_ipc
 ```
 
 `boards/ubuntu_x86_64_host.json` 中的 `/dev/ttyS0` 和 `/dev/ttyS1` 是示例设备节点。

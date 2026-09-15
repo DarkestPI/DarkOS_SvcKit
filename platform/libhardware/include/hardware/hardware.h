@@ -49,8 +49,9 @@ struct hw_device_t {
  * 从 hal.<variant>.so 加载 HMI_<id>。
  *
  * variant 优先取 DARKOS_HAL_VARIANT，未设置时使用构建目标的默认值；搜索目录
- * 优先取 DARKOS_HAL_LIBRARY_PATH（冒号分隔），然后查找系统默认目录。返回 0
- * 成功，失败返回负 errno。成功返回的 module 在进程生命周期内有效。
+ * 优先取 DARKOS_HAL_LIBRARY_PATH（冒号分隔）。未设置时依次查找可执行文件旁边
+ * 的 ../lib 和系统默认目录。返回 0 成功，失败返回负 errno。成功返回的 module
+ * 在进程生命周期内有效。
  */
 int hw_get_module(const char *id, const hw_module_t **module);
 

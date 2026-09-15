@@ -2,7 +2,16 @@
 #include <svc_board/BoardConfig.h>
 #include <svc_log.h>
 
+#include <audio/IAudio.h>
+#include <camera/ICameraDevice.h>
+#include <hardware/hardware.h>
+#include <media/ICodec.h>
+#include <serial/ISerial.h>
+
+#include <array>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <string>
 
@@ -45,6 +54,35 @@ bool parseOptions(int argc, char **argv, Options &options) {
     return true;
 }
 
+bool loadRequiredHalModules() {
+    constexpr std::array<const char *, 4> requiredModules = {
+        CAMERA_HARDWARE_MODULE_ID,
+        MEDIA_CODEC_HARDWARE_MODULE_ID,
+        AUDIO_HARDWARE_MODULE_ID,
+        SERIAL_HARDWARE_MODULE_ID,
+    };
+
+    for (const char *id : requiredModules) {
+        const hw_module_t *module = nullptr;
+        const int result = hw_get_module(id, &module);
+        if (result != 0) {
+            const int errorNumber = result < 0 ? -result : result;
+            SVC_LOGE(kTag, "HAL module load failed: id=%s error=%s (%d)", id,
+                     std::strerror(errorNumber), result);
+            return false;
+        }
+
+        SVC_LOGI(kTag,
+                 "HAL module loaded: id=%s name=\"%s\" module_api=%u.%u hal_api=%u.%u",
+                 module->id, module->name != nullptr ? module->name : "unknown",
+                 static_cast<unsigned>(module->module_api_version >> 8),
+                 static_cast<unsigned>(module->module_api_version & 0xff),
+                 static_cast<unsigned>(module->hal_api_version >> 8),
+                 static_cast<unsigned>(module->hal_api_version & 0xff));
+    }
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -81,8 +119,12 @@ int main(int argc, char **argv) {
                  port->device.c_str(), darkos::serialElectricalName(port->electrical), binding.baud);
     }
 
-    SVC_LOGI(kTag, "configuration validated; service wiring is ready");
+    if (!loadRequiredHalModules())
+        return EXIT_FAILURE;
 
+    SVC_LOGI(kTag, "configuration and HAL validated; service wiring is ready");
+
+    printf("\n");
     SVC_LOGE(kTag, "this is an SVC_LOGE log for testing");
     SVC_LOGW(kTag, "this is an SVC_LOGW log for testing");
     SVC_LOGI(kTag, "this is an SVC_LOGI log for testing");

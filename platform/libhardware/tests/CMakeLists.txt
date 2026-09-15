@@ -1,26 +1,28 @@
+set(loader_test_layout "${CMAKE_CURRENT_BINARY_DIR}/layout")
+
 add_library(loader_test_hal SHARED fake_hal.c)
 target_link_libraries(loader_test_hal PRIVATE hardware_base)
 set_target_properties(loader_test_hal PROPERTIES
     OUTPUT_NAME "hal.loader_test"
     PREFIX ""
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY "${loader_test_layout}/lib"
 )
 foreach(config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
     set_target_properties(loader_test_hal PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY_${config} "${CMAKE_CURRENT_BINARY_DIR}"
+        LIBRARY_OUTPUT_DIRECTORY_${config} "${loader_test_layout}/lib"
     )
 endforeach()
 
 add_executable(hardware_loader_test loader_test.c)
 target_link_libraries(hardware_loader_test PRIVATE hardware_base)
 target_compile_definitions(hardware_loader_test PRIVATE
-    TEST_HAL_DIRECTORY="${CMAKE_CURRENT_BINARY_DIR}")
+    TEST_HAL_DIRECTORY="${loader_test_layout}/lib")
 set_target_properties(hardware_loader_test PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${loader_test_layout}/bin"
 )
 foreach(config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
     set_target_properties(hardware_loader_test PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY_${config} "${CMAKE_CURRENT_BINARY_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_${config} "${loader_test_layout}/bin"
     )
 endforeach()
 add_dependencies(hardware_loader_test loader_test_hal)

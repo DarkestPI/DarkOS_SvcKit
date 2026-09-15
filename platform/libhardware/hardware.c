@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <hardware/hardware.h>
 
 #include <dlfcn.h>
@@ -6,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #ifndef DARKOS_DEFAULT_HAL_VARIANT
 #define DARKOS_DEFAULT_HAL_VARIANT ""
@@ -15,7 +18,7 @@
 #define HAL_MAX_VARIANT_LENGTH 63
 #define HAL_MAX_PATH_LENGTH 1023
 #define HAL_MAX_CACHED_MODULES 32
-#define HAL_DEFAULT_LIBRARY_PATH "/usr/lib/darkos/hal:/usr/lib:/lib"
+#define HAL_SYSTEM_LIBRARY_PATH "/usr/lib/darkos/hal:/usr/lib:/lib"
 
 typedef struct module_cache_entry {
   char id[HAL_MAX_ID_LENGTH + 1];
@@ -27,6 +30,41 @@ typedef struct module_cache_entry {
 static pthread_mutex_t g_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 static module_cache_entry_t g_cache[HAL_MAX_CACHED_MODULES];
 static size_t g_cache_size;
+
+/* 开发输出和安装布局都是 <root>/bin + <root>/lib。优先搜索可执行文件旁边的
+ * ../lib，使 staging 目录可以直接运行；失败时退回系统安装路径。 */
+static void default_library_path(char *buffer, size_t size) {
+  char executable[HAL_MAX_PATH_LENGTH + 1];
+  char *file_name;
+  char *bin_name;
+  ssize_t length;
+  int written;
+
+  length = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
+  if (length <= 0 || (size_t)length >= sizeof(executable) - 1) {
+    snprintf(buffer, size, "%s", HAL_SYSTEM_LIBRARY_PATH);
+    return;
+  }
+  executable[length] = '\0';
+
+  file_name = strrchr(executable, '/');
+  if (file_name == NULL) {
+    snprintf(buffer, size, "%s", HAL_SYSTEM_LIBRARY_PATH);
+    return;
+  }
+  *file_name = '\0';
+  bin_name = strrchr(executable, '/');
+  if (bin_name == NULL || strcmp(bin_name + 1, "bin") != 0) {
+    snprintf(buffer, size, "%s", HAL_SYSTEM_LIBRARY_PATH);
+    return;
+  }
+  *bin_name = '\0';
+
+  written = snprintf(buffer, size, "%s/lib:%s", executable,
+                     HAL_SYSTEM_LIBRARY_PATH);
+  if (written < 0 || (size_t)written >= size)
+    snprintf(buffer, size, "%s", HAL_SYSTEM_LIBRARY_PATH);
+}
 
 static int valid_component(const char *value, size_t maximum) {
   size_t length = 0;
@@ -102,6 +140,7 @@ static int load_from_directory(const char *directory, size_t directory_length,
 int hw_get_module(const char *id, const hw_module_t **module) {
   const char *variant;
   const char *search_path;
+  char default_search_path[HAL_MAX_PATH_LENGTH + 1];
   const char *cursor;
   const hw_module_t *cached;
   int result = -ENOENT;
@@ -117,8 +156,10 @@ int hw_get_module(const char *id, const hw_module_t **module) {
     return -EINVAL;
 
   search_path = getenv("DARKOS_HAL_LIBRARY_PATH");
-  if (search_path == NULL || search_path[0] == '\0')
-    search_path = HAL_DEFAULT_LIBRARY_PATH;
+  if (search_path == NULL || search_path[0] == '\0') {
+    default_library_path(default_search_path, sizeof(default_search_path));
+    search_path = default_search_path;
+  }
   if (strlen(search_path) > HAL_MAX_PATH_LENGTH)
     return -ENAMETOOLONG;
 

@@ -42,13 +42,10 @@ typedef struct camera_device_ops {
     int (*set_control)(camera_device_t *dev, uint32_t id, int32_t value);
     int (*get_control)(camera_device_t *dev, uint32_t id, int32_t *value);
 
-    /* 本地预览：把相机画面送显示输出（VO 视频层）。width/height = panel
-     * 分辨率（显示侧定稿值）。须在 start 之后调用；重复调用幂等返回 0。
-     * 未实现返回 -ENOTSUP。
-     * rockchip：采集线程内 VI 帧（MB_BLK）零拷贝直送 VO（不开额外 VI
-     * 通道——采集中新开 VI 通道在 RV1126B 上 EnableChn 报 RK_ERR_BUSY）。 */
+    /* 本地预览：把相机画面送显示输出（VO 视频层）。width/height = panel */
     int (*preview_start)(camera_device_t *dev, uint32_t width, uint32_t height);
     int (*preview_stop)(camera_device_t *dev);
+
 } camera_device_ops_t;
 
 /* 具体设备：基类 + 操作表 + 厂商私有上下文 */

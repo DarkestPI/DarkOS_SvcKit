@@ -4,7 +4,7 @@
  * 用途：在宿主机上开发/联调 frameworks、IPC 等上层，不依赖真实相机，
  *       也不依赖还在迭代中的 rockchip 实现（后续切 MPI）。
  *
- * 与 camera.rockchip.so 实现同一套 camera_device_ops，上层无感知。
+ * 与 Rockchip SoC Camera HAL 实现同一套 camera_device_ops，上层无感知。
  * 用环境变量切换：DARKOS_HAL_VARIANT=host_x86。
  *
  * 环境变量 DARKOS_CAMERA_DEVICE 指定 V4L2 设备节点（如 /dev/video0）时，
