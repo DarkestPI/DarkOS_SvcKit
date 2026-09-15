@@ -45,7 +45,8 @@
     "**/*.o": true,
     "**/*.a": true,
     "**/*.so": true,
-    "**/*.d": true
+    "**/*.d": true,
+    "**/cmake*": true
   },
   // 在 VSCode 文件监视器中排除这些文件/目录。
   "files.watcherExclude": {
