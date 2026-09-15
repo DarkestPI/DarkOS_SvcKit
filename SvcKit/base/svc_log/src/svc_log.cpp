@@ -10,9 +10,13 @@
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
+#include <ctime>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+
+#include <unistd.h>
 
 namespace {
 
@@ -44,6 +48,42 @@ char levelLetter(svc_log_level_t level) noexcept {
     default:
         return 'N';
     }
+}
+
+const char *levelColor(svc_log_level_t level) noexcept {
+    switch (level) {
+    case SVC_LOG_ERROR:
+        return "\033[1;31m";
+    case SVC_LOG_WARN:
+        return "\033[1;33m";
+    case SVC_LOG_INFO:
+        return "\033[1;32m";
+    case SVC_LOG_DEBUG:
+        return "\033[1;36m";
+    case SVC_LOG_VERBOSE:
+        return "\033[0;90m";
+    default:
+        return "";
+    }
+}
+
+void formatWallClock(char *buffer, std::size_t size) noexcept {
+    if (size < 24)
+        return;
+
+    const auto now = std::chrono::system_clock::now();
+    const auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(now);
+    const auto milliseconds =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - seconds).count();
+    const std::time_t time = std::chrono::system_clock::to_time_t(now);
+    std::tm localTime{};
+    localtime_r(&time, &localTime);
+    if (std::strftime(buffer, size, "%Y-%m-%d %H:%M:%S.000", &localTime) == 0)
+        return;
+
+    buffer[20] = static_cast<char>('0' + milliseconds / 100);
+    buffer[21] = static_cast<char>('0' + (milliseconds / 10) % 10);
+    buffer[22] = static_cast<char>('0' + milliseconds % 10);
 }
 
 int stderrVprintf(const char *format, va_list args) {
@@ -129,9 +169,18 @@ void svc_log_writev(svc_log_level_t level, const char *tag, const char *format,
 
     const char *safeTag = tag != nullptr ? tag : "SvcKit";
     std::lock_guard<std::mutex> lock(g_logMutex);
-    outputPrintf("%c (%llu) %s: %s\n", levelLetter(level),
-                 static_cast<unsigned long long>(svc_log_timestamp()), safeTag,
-                 message);
+    char timestamp[32];
+    formatWallClock(timestamp, sizeof(timestamp));
+
+    const bool useColor = g_output == nullptr && ::isatty(STDERR_FILENO) != 0 &&
+                          std::getenv("NO_COLOR") == nullptr;
+    if (useColor) {
+        outputPrintf("%s %s%c %s: %s\033[0m\n", timestamp, levelColor(level),
+                     levelLetter(level), safeTag, message);
+    } else {
+        outputPrintf("%s %c %s: %s\n", timestamp, levelLetter(level), safeTag,
+                     message);
+    }
     if (g_output == nullptr) {
         std::fflush(stderr);
     }

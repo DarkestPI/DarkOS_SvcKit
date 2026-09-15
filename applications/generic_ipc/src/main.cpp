@@ -48,6 +48,8 @@ bool parseOptions(int argc, char **argv, Options &options) {
 } // namespace
 
 int main(int argc, char **argv) {
+
+    svc_log_set_default_level(SVC_LOG_VERBOSE);
     SVC_LOGI(kTag, "application started");
 
     Options options(defaultConfigDirectory());
@@ -80,5 +82,12 @@ int main(int argc, char **argv) {
     }
 
     SVC_LOGI(kTag, "configuration validated; service wiring is ready");
+
+    SVC_LOGE(kTag, "this is an SVC_LOGE log for testing");
+    SVC_LOGW(kTag, "this is an SVC_LOGW log for testing");
+    SVC_LOGI(kTag, "this is an SVC_LOGI log for testing");
+    SVC_LOGD(kTag, "this is an SVC_LOGD log for testing");
+    SVC_LOGV(kTag, "this is an SVC_LOGV log for testing");
+
     return 0;
 }

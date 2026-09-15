@@ -11,7 +11,7 @@
       "displayName": "generic_ipc Ubuntu x86_64 Release",
       "description": "使用 Ubuntu 本机编译器构建 x86_64 Release 版本",
       "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build/ubuntu_x86_64",
+      "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",

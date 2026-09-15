@@ -60,15 +60,20 @@ SVC_LOGI(TAG, "服务启动完成");
 默认输出到 `stderr`，格式如下：
 
 ```text
-I (12) camera: 启动通道：0
+2026-09-15 14:32:08.123 I camera: 启动通道：0
 ```
 
 其中：
 
+- 开头是本地日期和时间，精确到毫秒；
 - `I` 是日志等级；
-- `12` 是程序启动后的毫秒数；
 - `camera` 是日志 tag；
 - 最后部分是格式化后的日志内容。
+
+直接输出到终端时，时间戳保持终端默认颜色；从日志等级、tag 到消息正文的整段内容，
+Error、Warn、Info、Debug、Verbose 会分别使用红、黄、绿、青、灰色显示。重定向到
+文件或通过 `svc_log_set_vprintf()` 接管输出时不会写入 ANSI 颜色码；设置
+`NO_COLOR` 环境变量也可以关闭颜色。
 
 单条日志的格式化缓冲区为 1024 字节，超出部分会被截断。
 
@@ -195,7 +200,7 @@ svc_log_write(SVC_LOG_INFO, TAG, "value=%d", value);
 svc_log_writev(SVC_LOG_INFO, TAG, format, args);
 ```
 
-获取单调毫秒时间戳：
+获取程序启动后的单调毫秒时间戳（与日志行展示的本地时间相互独立）：
 
 ```c
 uint64_t milliseconds = svc_log_timestamp();

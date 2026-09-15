@@ -66,20 +66,21 @@ void testFormattingAndFiltering() {
     CHECK(g_output.empty());
 
     SVC_LOGI("format", "value=%d", 42);
-    CHECK(g_output.find("I (") == 0);
-    CHECK(g_output.find(") format: value=42\n") != std::string::npos);
+    CHECK(g_output.size() >= 24);
+    CHECK(g_output[4] == '-' && g_output[7] == '-' && g_output[10] == ' ');
+    CHECK(g_output.find(" I format: value=42\n") != std::string::npos);
 
     g_output.clear();
     SVC_LOGE(nullptr, "failure");
-    CHECK(g_output.find(") SvcKit: failure\n") != std::string::npos);
+    CHECK(g_output.find(" E SvcKit: failure\n") != std::string::npos);
 }
 
 void testCInterface() {
     resetLog(SVC_LOG_INFO);
     svc_log_c_api_smoke();
 
-    CHECK(g_output.find(") c_api: message only\n") != std::string::npos);
-    CHECK(g_output.find(") c_api: value=7\n") != std::string::npos);
+    CHECK(g_output.find(" I c_api: message only\n") != std::string::npos);
+    CHECK(g_output.find(" W c_api: value=7\n") != std::string::npos);
 }
 
 void testTimestamp() {

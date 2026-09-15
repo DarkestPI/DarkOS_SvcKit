@@ -1,11 +1,11 @@
 {
   "clangd.arguments": [
-    "--compile-commands-dir=${workspaceFolder}/build/ubuntu_x86_64",
+    "--compile-commands-dir=${workspaceFolder}/build",
     "--background-index",
     "--clang-tidy"
   ],
   "cmake.sourceDirectory": "${workspaceFolder}",
-  "cmake.buildDirectory": "${workspaceFolder}/build/ubuntu_x86_64",
+  "cmake.buildDirectory": "${workspaceFolder}/build",
   "cmake.useCMakePresets": "always",
   "cmake.configureOnOpen": false
 }
