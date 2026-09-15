@@ -9,7 +9,7 @@
     {
       "name": "svckit_project_template",
       "displayName": "svckit_project_template Release",
-      "description": "使用 Rockchip ARM hard-float 工具链构建 Release 版本",
+      "description": "使用 Rockchip RV1126B ARM hard-float 工具链构建 Release 版本",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build",
       "toolchainFile": "${sourceDir}/../../cmake/toolchains/arm-rockchip1240-gnueabihf.cmake",
@@ -17,7 +17,9 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "DARKOS_BUILD_HAL_IMPLEMENTATIONS": "ON",
-        "DARKOS_PLATFORM": "rockchip",
+        "DARKOS_PLATFORM": "auto",
+        "DARKOS_VENDOR": "rockchip",
+        "DARKOS_SOC": "rv1126b",
         "DARKOS_OUTPUT_ROOT": "${sourceDir}/../../output/rv1126b_ipc"
       }
     }

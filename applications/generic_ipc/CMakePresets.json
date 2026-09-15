@@ -17,6 +17,8 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "DARKOS_BUILD_HAL_IMPLEMENTATIONS": "ON",
         "DARKOS_PLATFORM": "ubuntu_x86_64",
+        "DARKOS_VENDOR": "",
+        "DARKOS_SOC": "",
         "DARKOS_OUTPUT_ROOT": "${sourceDir}/../../output/generic_ipc"
       }
     }

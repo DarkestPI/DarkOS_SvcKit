@@ -1,6 +1,6 @@
 add_executable(serial_termios_test
     serial_termios_test.c
-    ../shared/serial/serial_termios.c
+    ../shared/linux/serial/serial_termios.c
 )
 target_compile_features(serial_termios_test PRIVATE c_std_17)
 target_link_libraries(serial_termios_test PRIVATE serial_interfaces)

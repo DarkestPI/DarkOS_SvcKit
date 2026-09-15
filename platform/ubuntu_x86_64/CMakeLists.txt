@@ -7,7 +7,7 @@ find_package(Threads REQUIRED)
 
 add_library(hal_host_x86 SHARED
     camera/camera_host_x86.c         # 合成测试图案（DARKOS_CAMERA_DEVICE 分流 UVC） -> HMI_camera
-    camera/camera_uvc.c              # UVC/V4L2 真实摄像头（YUYV→NV12）
+    ../shared/linux/camera/camera_v4l2.c # Linux UVC/V4L2 后端（YUYV/MJPEG→NV12）
     media/codec_host_x86.c           # RAW 透传 + x264 软编 -> HMI_codec
     audio/audio_host_x86.c           # 正弦波声源/伪播放    -> HMI_audio
     wifi/wifi_host_x86.c             # 假热点扫描/连接      -> HMI_wifi
@@ -16,10 +16,13 @@ add_library(hal_host_x86 SHARED
     gnss/gnss_host_x86.c             # 1Hz 移动定位点      -> HMI_gnss
     light/light_host_x86.c           # 内存态灯            -> HMI_light
     graphics/graphics_host_x86.c     # OSD canvas（malloc+DARKOS_OSD_DUMP 存 PPM）-> HMI_graphics
-    ../shared/serial/serial_termios.c # 跨厂商共享 termios 串口 -> HMI_serial
+    ../shared/linux/serial/serial_termios.c # Linux 通用 termios 串口 -> HMI_serial
 )
 
 darkos_prepare_target_output(hal_host_x86)
+
+target_include_directories(hal_host_x86 PRIVATE
+    ../shared/linux/camera)
 
 target_link_libraries(hal_host_x86 PRIVATE
     hardware_interfaces   # 全部接口包的聚合目标（见 interfaces/CMakeLists.txt）

@@ -14,7 +14,7 @@ extern "C" {
  * camera 设备接口（对应 Android 的 ICameraDevice）
  *
  * 把硬件能力抽象为"格式协商 + 流控制 + 帧获取 + 控制项"四类操作。
- * 厂商实现（rockchip/camera）负责把本接口映射到 V4L2 + rkaiq(3A)。
+ * 厂商/SoC 实现负责把本接口映射到 V4L2、Rockit、RKAIQ 等具体后端。
  * ------------------------------------------------------------------------- */
 
 #define CAMERA_HARDWARE_MODULE_ID "camera"

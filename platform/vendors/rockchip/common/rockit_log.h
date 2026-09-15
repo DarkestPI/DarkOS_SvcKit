@@ -6,7 +6,7 @@
  *
  * startup level 对应 Rockit 的 rt_log_level 环境变量，必须在首次调用 Rockit
  * API 前设置；module level 通过 Rockit 监听的 /tmp/rt_log_level 动态生效。
- * 该接口只供 hal.rockchip.so 内部使用，不向 SvcKit 或产品层暴露。
+ * 该接口只供 Rockchip SoC HAL 插件内部使用，不向 SvcKit 或产品层暴露。
  */
 
 #ifdef __cplusplus

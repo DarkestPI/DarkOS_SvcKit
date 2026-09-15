@@ -444,7 +444,7 @@ static int rk_audio_open(const hw_module_t *module, const char *id, hw_device_t 
 }
 
 /* ---------------------------------------------------------------------------
- * 模块导出（合并库形态：hal.rockchip.so，dlsym("HMI_audio")）
+ * 模块导出（hal.rockchip.rv1126b.so，dlsym("HMI_audio")）
  * ------------------------------------------------------------------------- */
 
 static struct hw_module_methods_t rk_audio_methods = {

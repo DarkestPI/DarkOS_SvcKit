@@ -6,7 +6,7 @@
  * 记账计数；环境变量 DARKOS_OSD_DUMP=1 时每次 flush 把 canvas 转 RGB
  * 写成二进制 PPM 到 /tmp/osd_dump.ppm（覆盖写），供联调目检/像素验证。
  *
- * 与 hal.rockchip.so 的 RGN canvas 实现同一套 graphics_device_ops。
+ * 与硬件 SoC HAL 的 OSD canvas 实现同一套 graphics_device_ops。
  * 用环境变量切换：DARKOS_HAL_VARIANT=host_x86。
  */
 

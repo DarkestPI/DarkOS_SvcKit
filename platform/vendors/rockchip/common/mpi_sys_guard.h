@@ -2,7 +2,7 @@
 #define DARKOS_HAL_ROCKCHIP_MPI_SYS_GUARD_H
 
 /* ---------------------------------------------------------------------------
- * rockit RK_MPI_SYS_Init/Exit 进程级守卫（hal.rockchip.so 内多模块共享）
+ * Rockit RK_MPI_SYS_Init/Exit 进程级守卫（同一 Rockchip SoC HAL 内共享）
  *
  * camera(VI) / codec(VENC/VDEC) / audio(AI/AO) / display(VO) 各模块的
  * start/stop 时机相互独立，而 SYS_Init/Exit 是进程级的：任一模块在用就不能

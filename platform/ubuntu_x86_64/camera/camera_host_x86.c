@@ -8,7 +8,7 @@
  * 用环境变量切换：DARKOS_HAL_VARIANT=host_x86。
  *
  * 环境变量 DARKOS_CAMERA_DEVICE 指定 V4L2 设备节点（如 /dev/video0）时，
- * open 分流到 camera_uvc.c 的 UVC 实现，采集真实摄像头画面（YUYV→NV12）。
+ * open 可分流到 shared/linux/camera 的 V4L2 后端，采集真实摄像头画面。
  *
  * 当前仅生成 NV12 测试图案（水平渐变 + 随帧号移动），
  * 后续可按需扩展 YUYV / RGB24 等。
@@ -18,7 +18,7 @@
 #define _GNU_SOURCE /* pthread_setname_np（glibc 严格模式下需要） */
 #endif
 
-#include "camera_uvc.h"
+#include "camera_v4l2.h"
 
 #include <camera/ICameraDevice.h>
 #include <hardware/hardware.h>
@@ -381,14 +381,14 @@ static int host_camera_open(const hw_module_t *module, const char *id, hw_device
         return -EINVAL;
     }
 
-    /* 指定了 V4L2 设备节点则走 UVC 真实摄像头（camera_uvc.c）。
+    /* 指定了 V4L2 设备节点则走 Linux 公共 V4L2 后端。
      * 实例 0 兼容旧变量 DARKOS_CAMERA_DEVICE；实例 N 用 DARKOS_CAMERA_DEVICE_N。 */
     snprintf(env_name, sizeof(env_name), "DARKOS_CAMERA_DEVICE_%d", idx);
     uvc_dev = getenv(env_name);
     if (uvc_dev == NULL && idx == 0)
         uvc_dev = getenv("DARKOS_CAMERA_DEVICE");
     if (uvc_dev != NULL && uvc_dev[0] != '\0')
-        return uvc_camera_open(module, uvc_dev, device);
+        return linux_v4l2_camera_open(module, uvc_dev, device);
 
     dev = (camera_device_t *)calloc(1, sizeof(*dev));
     priv = (host_camera_priv_t *)calloc(1, sizeof(*priv));

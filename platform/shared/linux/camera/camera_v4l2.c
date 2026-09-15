@@ -1,5 +1,5 @@
 /*
- * host_x86 UVC 相机实现：DARKOS_CAMERA_DEVICE 指定 V4L2 设备节点时启用。
+ * Linux 通用 V4L2/UVC Camera 后端。
  *
  * 与 camera_host_x86.c（合成图案）实现同一套 camera_device_ops，由后者在
  * open 时按环境变量分流，上层无感知：
@@ -18,7 +18,7 @@
 #define _GNU_SOURCE /* pthread_setname_np（glibc 严格模式下需要） */
 #endif
 
-#include "camera_uvc.h"
+#include "camera_v4l2.h"
 
 #include <camera/ICameraDevice.h>
 #include <hardware/hardware.h>
@@ -547,7 +547,8 @@ static int uvc_camera_close(hw_device_t *device) {
     return 0;
 }
 
-int uvc_camera_open(const hw_module_t *module, const char *device_path, hw_device_t **device) {
+int linux_v4l2_camera_open(const hw_module_t *module, const char *device_path,
+                           hw_device_t **device) {
     camera_device_t *dev;
     uvc_camera_priv_t *priv;
     int fd;

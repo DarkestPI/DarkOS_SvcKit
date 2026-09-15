@@ -13,6 +13,9 @@ cmake --preset rv1126b_ipc -DDARKOS_BOARD=rv1126b_ipc_v1
 cmake --build --preset rv1126b_ipc -j
 ```
 
+Preset 使用 `DARKOS_VENDOR=rockchip` 和 `DARKOS_SOC=rv1126b` 选择具体芯片 HAL，
+生成 `output/rv1126b_ipc/lib/hal.rockchip.rv1126b.so`。
+
 构建结果中的配置为 `output/rv1126b_ipc/etc/board.json` 和
 `output/rv1126b_ipc/etc/app.json`。安装到设备后程序默认从 `/etc` 读取；宿主机
 调试可以显式指定源码配置：

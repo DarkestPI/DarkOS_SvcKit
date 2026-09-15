@@ -415,7 +415,7 @@ static int rk_display_open(const hw_module_t *module, const char *id, hw_device_
 }
 
 /* ---------------------------------------------------------------------------
- * 模块导出（合并库形态：hal.rockchip.so，dlsym("HMI_display")）
+ * 模块导出（hal.rockchip.rv1126b.so，dlsym("HMI_display")）
  * ------------------------------------------------------------------------- */
 
 static struct hw_module_methods_t rk_display_methods = {

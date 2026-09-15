@@ -1,61 +1,77 @@
 # Platform 层
 
-Platform 是仿 Android HAL 的纯 C 硬件抽象层。公共接口与厂商实现分离；
-SvcKit 始终依赖 `DarkOS::Platform`，具体实现由 CMake 配置选择。
+Platform 是仿 Android legacy HAL 的纯 C 硬件抽象层。接口、Linux 公共机制、
+厂商公共代码和具体 SoC 实现分开维护；SvcKit 只依赖接口，Application 通过
+`libhardware` 在运行时加载 HAL 插件。
 
-## CMake 选择方式
-
-- `DARKOS_BUILD_HAL_IMPLEMENTATIONS=OFF`（默认）：只建立公共接口目标，不编译
-  具体平台实现。
-- `DARKOS_BUILD_HAL_IMPLEMENTATIONS=ON`：编译 `DARKOS_PLATFORM` 指定的唯一实现。
-- `DARKOS_PLATFORM=auto`（默认）：RV1126B 工具链选择 `rockchip`，本机 Linux
-  x86-64 选择 `ubuntu_x86_64`。不能可靠识别时必须显式指定。
-
-例如：
-
-```bash
-cmake -S . -B build/host \
-    -DDARKOS_PLATFORM=ubuntu_x86_64 \
-    -DDARKOS_BUILD_HAL_IMPLEMENTATIONS=ON
-```
-
-平台名统一在根 `CMakeLists.txt` 中登记，但只会加入当前选中的一个子目录。
-这样尚未实现的平台不会导致其他目标配置失败。
-
-## 平台名
-
-- `ubuntu_x86_64`：Ubuntu x86-64 主机参考实现
-- `rockchip`：瑞芯微
-- `gokemicro`：国科微
-- `allwinner`：全志
-- `artosyn`：库芯微
-- `ingenic`：北京君正
-- `novatek`：联咏
-- `sunplus`：新唐
-
-当前仓库包含 `ubuntu_x86_64` 和 `rockchip` 的实现目录。
-
-## 运行时加载
-
-Application 只链接 `libhardware` 与公共接口，不直接链接厂商 HAL。开启实现构建
-后，选中的 `hal.<variant>.so` 会作为独立插件构建；`hw_get_module("camera")`
-在运行时执行：
+## 目录边界
 
 ```text
-读取 DARKOS_HAL_VARIANT（未设置则使用构建默认值）
-  → 在 DARKOS_HAL_LIBRARY_PATH（冒号分隔）中查找 hal.<variant>.so
-  → dlsym("HMI_camera")
-  → 校验 tag、模块 ID、HAL ABI 主版本和 open 方法
-  → 缓存并返回 module
+platform/
+├── interfaces/                       稳定 HAL ABI
+├── libhardware/                      hal.<variant>.so 加载器
+├── shared/linux/                     不依赖芯片 SDK 的 Linux 公共后端
+│   ├── camera/camera_v4l2.c          V4L2/UVC 采集
+│   ├── gpio/gpio_sysfs.c             legacy sysfs GPIO
+│   └── serial/serial_termios.c        termios/RS-485 串口
+├── vendors/
+│   └── rockchip/
+│       ├── common/                   Rockchip SoC 间可复用的 Rockit 辅助代码
+│       └── socs/rv1126b/             RV1126B Camera/Media/Audio/Display 等实现
+└── ubuntu_x86_64/                    Ubuntu 主机参考/模拟 HAL
 ```
 
-安装后的默认插件目录是 `/usr/lib/darkos/hal`；开发阶段可以指向构建输出：
+`shared` 不导出厂商模块，也不知道 Rockchip/RV1126B。厂商层负责选择和组装公共
+后端，SoC 层负责 SDK ABI、媒体通道、ISP/NPU 和硬件能力差异。设备节点、GPIO
+编号、串口用途等装配信息仍属于 Board 配置。
+
+## 构建选择
+
+默认只构建接口：
+
+```cmake
+DARKOS_BUILD_HAL_IMPLEMENTATIONS=OFF
+```
+
+Ubuntu x86_64 参考实现：
 
 ```bash
-DARKOS_HAL_VARIANT=host_x86 \
+cmake -S . -B build \
+    -DDARKOS_BUILD_HAL_IMPLEMENTATIONS=ON \
+    -DDARKOS_PLATFORM=ubuntu_x86_64
+```
+
+真实 Rockchip SoC 使用 Vendor + SoC 两级选择：
+
+```bash
+cmake -S . -B build \
+    -DDARKOS_BUILD_HAL_IMPLEMENTATIONS=ON \
+    -DDARKOS_VENDOR=rockchip \
+    -DDARKOS_SOC=rv1126b
+```
+
+RV1126B 工具链变量存在时可以自动识别 vendor 和 SoC。旧的
+`DARKOS_PLATFORM=rockchip` 暂时兼容，但已弃用。
+
+当前已登记的 vendor 有 `rockchip`、`allwinner`、`artosyn`、`gokemicro`、
+`ingenic`、`novatek`、`sunplus`；只有 Rockchip/RV1126B 已提供实现。登记不等于
+实现，选择尚未实现的 vendor 时 CMake 会明确报错。
+
+## 插件命名与加载
+
+- Ubuntu x86_64：`hal.host_x86.so`
+- Rockchip RV1126B：`hal.rockchip.rv1126b.so`
+
+Application 不直接链接插件。`hw_get_module("camera")` 会读取
+`DARKOS_HAL_VARIANT`，查找 `hal.<variant>.so`，再通过 `dlsym("HMI_camera")`
+获取模块。未设置环境变量时使用构建阶段选定的默认 variant。
+
+开发阶段可以覆盖搜索目录：
+
+```bash
+DARKOS_HAL_VARIANT=rockchip.rv1126b \
 DARKOS_HAL_LIBRARY_PATH=/path/to/output/lib application
 ```
 
-`platform/shared` 保存不依赖 SoC SDK 的 Linux 通用实现。目前串口由 termios
-实现，可以同时创建多个设备实例；具体 `/dev/tty*` 与业务用途仍由 Board 和
-Application 配置决定。
+安装后的默认搜索路径包含 `/usr/lib/darkos/hal`。插件按进程缓存，Application
+只链接 `libhardware` 与公共接口，因此不会产生厂商 HAL 的 `DT_NEEDED` 依赖。

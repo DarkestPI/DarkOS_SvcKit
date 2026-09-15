@@ -21,13 +21,13 @@
 #include <hardware/hardware.h>
 #include <light/ILight.h>
 
+#include "gpio_sysfs.h"
+
 #include <errno.h>
-#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #define RK_LIGHT_COUNT 3 /* STATUS/IR/WHITE，按 light_id_t 索引 */
 
@@ -68,36 +68,14 @@ static int rk_light_env_active_low(const char *light_name) {
     return (val != NULL && strcmp(val, "1") == 0) ? 1 : 0;
 }
 
-/* 写 sysfs 属性文件；成功返回 0 */
-static int rk_light_sysfs_write(const char *path, const char *val) {
-    int fd = open(path, O_WRONLY);
-    ssize_t n;
-
-    if (fd < 0)
-        return -errno;
-    n = write(fd, val, strlen(val));
-    close(fd);
-    return n > 0 ? 0 : -EIO;
-}
-
 /* export 并设为输出方向（已 export 过时直接设方向）。幂等。 */
 static int rk_light_gpio_prepare(rk_light_gpio_t *gpio) {
-    char path[128];
-    char num[16];
     int rc;
 
     if (gpio->exported)
         return 0;
 
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d", gpio->pin);
-    if (access(path, F_OK) != 0) {
-        snprintf(num, sizeof(num), "%d", gpio->pin);
-        rc = rk_light_sysfs_write("/sys/class/gpio/export", num);
-        if (rc != 0)
-            return rc;
-    }
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/direction", gpio->pin);
-    rc = rk_light_sysfs_write(path, "out");
+    rc = linux_gpio_sysfs_prepare_output(gpio->pin);
     if (rc != 0)
         return rc;
     gpio->exported = 1;
@@ -105,15 +83,13 @@ static int rk_light_gpio_prepare(rk_light_gpio_t *gpio) {
 }
 
 static int rk_light_gpio_set(rk_light_gpio_t *gpio, int on) {
-    char path[128];
     int level = on ? !gpio->active_low : gpio->active_low;
     int rc;
 
     rc = rk_light_gpio_prepare(gpio);
     if (rc != 0)
         return rc;
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", gpio->pin);
-    return rk_light_sysfs_write(path, level ? "1" : "0");
+    return linux_gpio_sysfs_write_value(gpio->pin, level);
 }
 
 /* ---------------------------------------------------------------------------
@@ -217,7 +193,7 @@ static int rk_light_open(const hw_module_t *module, const char *id, hw_device_t 
 }
 
 /* ---------------------------------------------------------------------------
- * 模块导出（合并库形态：hal.rockchip.so，dlsym("HMI_light")）
+ * 模块导出（hal.rockchip.rv1126b.so，dlsym("HMI_light")）
  * ------------------------------------------------------------------------- */
 
 static struct hw_module_methods_t rk_light_methods = {
