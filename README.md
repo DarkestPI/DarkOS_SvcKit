@@ -88,6 +88,34 @@ cmake -S . -B build \
 `DarkOS::SvcKit`，也可以按需链接 `DarkOS::Media`、`DarkOS::Networking`、
 `DarkOS::RTSP` 等细粒度目标。
 
+## IDE 跳转（clangd）
+
+clangd 按就近原则查找编译数据库：从当前文件逐级向上找 `compile_commands.json`
+或 `<目录>/build/compile_commands.json`。`applications/<app>/build/` 下的库只
+对应用自己的源码生效，直接编辑 `platform/`、`SvcKit/` 下的文件会找不到库、
+无法跳转。根目录的 `build.sh` 提供了一键修复：
+
+```bash
+./build.sh ide
+```
+
+它做两件事：
+
+1. 在 SDK 根目录配置一份 host 工程（`build/`，已被 gitignore），其
+   `compile_commands.json` 覆盖 platform host 实现、shared 后端、libhardware
+   和 SvcKit；
+2. 把 `platform/vendors/rockchip/socs/rv1126b/build/compile_commands.json`
+   链接到 `applications/rv1126b_ipc` 的交叉编译数据库——厂商代码需要交叉
+   工具链 + Rockit SDK 头文件，host 库覆盖不到；该链接随 rv1126b_ipc 重建
+   自动更新（尚未构建过时先执行 `./build.sh app rv1126b_ipc`）。
+
+配置变更后如跳转未更新，执行一次"clangd: Restart language server"。
+
+`build.sh` 还有其它子命令：`host` 构建根目录 host 工程的测试聚合目标、
+`test` 构建并运行全部 host 测试（`ctest`）、`app <name>` 按应用自己的
+preset 配置并构建 `applications/<name>`、`clean [<name>]` 删除应用构建
+目录（省略名字则清理全部应用）。
+
 # 目录结构
 
 SvcKit/

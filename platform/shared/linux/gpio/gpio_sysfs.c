@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE /* O_CLOEXEC（严格 C 模式下需特性宏，见 serial_termios.c 同款） */
+#endif
+
 #include "gpio_sysfs.h"
 
 #include <errno.h>
