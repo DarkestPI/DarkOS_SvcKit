@@ -58,7 +58,8 @@ struct camera_device {
 /* 按实例 id 打开 camera 设备：多路摄像头场景使用。
  * id 约定："camera"/"camera0" → 实例 0，"cameraN" → 实例 N。
  * 厂商实现把实例号映射到硬件通道（rockchip：VI dev=pipe=N、chn=0，
- * 可用环境变量 DARKOS_CAMERA{N}_VI_DEV/PIPE/CHN 覆盖）。 */
+ * 可用环境变量 DARKOS_CAMERA{N}_VI_DEV/PIPE/CHN 覆盖）。 
+ */
 static inline int camera_open_by_id(const hw_module_t *module, const char *id,
                                     camera_device_t **device) {
     hw_device_t *hwdev = NULL;
