@@ -404,7 +404,7 @@ static int rk_display_open(const hw_module_t *module, const char *id, hw_device_
     priv->vo_layer = rk_vo_env_int("DARKOS_VO_LAYER", 0);
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = DISPLAY_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = rk_display_close;
     dev->ops = &rk_display_ops;

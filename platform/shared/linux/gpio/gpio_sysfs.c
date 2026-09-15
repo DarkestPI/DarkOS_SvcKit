@@ -7,7 +7,7 @@
 #include <unistd.h>
 
 static int write_attribute(const char *path, const char *value) {
-    int fd = open(path, O_WRONLY);
+    int fd = open(path, O_WRONLY | O_CLOEXEC);
     ssize_t written;
 
     if (fd < 0)

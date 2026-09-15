@@ -446,7 +446,7 @@ static int rk_gfx_open(const hw_module_t *module, const char *id, hw_device_t **
     priv->handle = RK_OSD_HANDLE;
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = GRAPHICS_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = rk_gfx_close;
     dev->ops = &rk_gfx_ops;

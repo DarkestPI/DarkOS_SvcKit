@@ -193,7 +193,7 @@ static int host_wifi_open(const hw_module_t *module, const char *id, hw_device_t
     priv->state = WIFI_STATE_DISCONNECTED;
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = WIFI_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = host_wifi_close;
     dev->ops = &host_wifi_ops;

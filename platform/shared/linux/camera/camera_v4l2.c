@@ -576,7 +576,7 @@ int linux_v4l2_camera_open(const hw_module_t *module, const char *device_path,
         .width = 640, .height = 480, .pixel_format = CAMERA_PIX_FMT_NV12, .fps = 30};
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = CAMERA_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = uvc_camera_close;
     dev->ops = &uvc_camera_ops;

@@ -171,7 +171,7 @@ static int host_gfx_open(const hw_module_t *module, const char *id, hw_device_t 
     priv->dump = (dump != NULL && strcmp(dump, "1") == 0);
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = GRAPHICS_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = host_gfx_close;
     dev->ops = &host_gfx_ops;

@@ -18,6 +18,9 @@ typedef struct termios_serial_priv {
 
 static int baud_to_speed(uint32_t baud, speed_t *speed) {
   switch (baud) {
+  case 4800:
+    *speed = B4800;
+    return 0;
   case 9600:
     *speed = B9600;
     return 0;
@@ -36,6 +39,16 @@ static int baud_to_speed(uint32_t baud, speed_t *speed) {
 #ifdef B230400
   case 230400:
     *speed = B230400;
+    return 0;
+#endif
+#ifdef B460800
+  case 460800:
+    *speed = B460800;
+    return 0;
+#endif
+#ifdef B921600
+  case 921600:
+    *speed = B921600;
     return 0;
 #endif
   default:
@@ -148,7 +161,7 @@ static int termios_serial_create(const hw_module_t *module, const char *id,
   }
   priv->fd = -1;
   device->common.tag = HARDWARE_DEVICE_TAG;
-  device->common.version = 0;
+  device->common.version = SERIAL_DEVICE_API_VERSION_1_0;
   device->common.module = (hw_module_t *)module;
   device->common.close = termios_serial_destroy;
   device->ops = &g_serial_ops;

@@ -240,7 +240,7 @@ static int host_bt_open(const hw_module_t *module, const char *id, hw_device_t *
     strncpy(priv->name, HOST_BT_DEFAULT_NAME, BT_NAME_MAX_LEN);
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = BLUETOOTH_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = host_bt_close;
     dev->ops = &host_bt_ops;

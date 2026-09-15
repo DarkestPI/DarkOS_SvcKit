@@ -205,7 +205,7 @@ static int host_gnss_open(const hw_module_t *module, const char *id, hw_device_t
     }
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = GNSS_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = host_gnss_close;
     dev->ops = &host_gnss_ops;

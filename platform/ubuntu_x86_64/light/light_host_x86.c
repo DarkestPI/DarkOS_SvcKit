@@ -119,7 +119,7 @@ static int host_light_open(const hw_module_t *module, const char *id, hw_device_
     /* states 由 calloc 清零：默认全灭、常亮模式，无需再初始化 */
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = LIGHT_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = host_light_close;
     dev->ops = &host_light_ops;

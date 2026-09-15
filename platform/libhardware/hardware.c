@@ -111,9 +111,17 @@ static int load_from_directory(const char *directory, size_t directory_length,
   if (written < 0 || (size_t)written >= sizeof(library))
     return -ENAMETOOLONG;
 
-  handle = dlopen(library, RTLD_NOW | RTLD_LOCAL);
-  if (handle == NULL)
+  /* 本目录没有该插件属正常扫描流程，静默继续；文件存在但 dlopen 失败（缺
+   * 依赖库、符号未定义等）时 dlerror 里有唯一线索，必须打出来再中止。 */
+  if (access(library, F_OK) != 0)
     return -ENOENT;
+  handle = dlopen(library, RTLD_NOW | RTLD_LOCAL);
+  if (handle == NULL) {
+    const char *reason = dlerror();
+    fprintf(stderr, "libhardware: %s: %s\n", library,
+            reason != NULL ? reason : "dlopen failed");
+    return -ELIBBAD;
+  }
   written = snprintf(symbol, sizeof(symbol), "HMI_%s", id);
   if (written < 0 || (size_t)written >= sizeof(symbol)) {
     dlclose(handle);
@@ -122,6 +130,7 @@ static int load_from_directory(const char *directory, size_t directory_length,
   dlerror();
   candidate = (hw_module_t *)dlsym(handle, symbol);
   if (candidate == NULL || dlerror() != NULL) {
+    /* 该插件不提供此模块：正常情况（如精简变体），继续扫后面的目录 */
     dlclose(handle);
     return -ENOENT;
   }
@@ -129,6 +138,8 @@ static int load_from_directory(const char *directory, size_t directory_length,
       strcmp(candidate->id, id) != 0 || candidate->methods == NULL ||
       candidate->methods->open == NULL ||
       (candidate->hal_api_version >> 8) != (HARDWARE_API_VERSION_1_0 >> 8)) {
+    fprintf(stderr, "libhardware: %s: HMI_%s failed module validation\n",
+            library, id);
     dlclose(handle);
     return -ELIBBAD;
   }

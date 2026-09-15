@@ -409,7 +409,7 @@ static int host_camera_open(const hw_module_t *module, const char *id, hw_device
         .width = 1920, .height = 1080, .pixel_format = CAMERA_PIX_FMT_NV12, .fps = 30};
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = CAMERA_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = host_camera_close;
     dev->ops = &host_camera_ops;

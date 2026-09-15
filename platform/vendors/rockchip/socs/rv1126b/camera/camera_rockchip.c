@@ -460,6 +460,7 @@ static int rk_camera_start(camera_device_t *dev) {
     VI_DEV_BIND_PIPE_S bind_pipe;
     VI_CHN_ATTR_S chn_attr;
     int rc;
+    int ret = -EIO;
 
     if (priv->streaming)
         return -EBUSY;
@@ -525,23 +526,29 @@ static int rk_camera_start(camera_device_t *dev) {
         if (rc != 0) {
             priv->running = 0;
             priv->streaming = 0;
-            RK_MPI_VI_DisableChn(priv->vi_pipe, priv->vi_chn);
-            priv->chn_enabled = 0;
-            rk_mpi_sys_release();
-            priv->sys_acquired = 0;
-            rk_aiq_3a_stop(priv);
-            return -rc;
+            ret = -rc;
+            goto out_aiq;
         }
     }
     return 0;
 
 out_aiq:
+    /* 按使能逆序回收：chn → dev → SYS 引用 → 3A（与 stop 的回收顺序一致），
+     * 避免 EnableChn/pthread_create 失败后 VI dev 残留使能态 */
+    if (priv->chn_enabled) {
+        RK_MPI_VI_DisableChn(priv->vi_pipe, priv->vi_chn);
+        priv->chn_enabled = 0;
+    }
+    if (priv->dev_enabled) {
+        RK_MPI_VI_DisableDev(priv->vi_dev);
+        priv->dev_enabled = 0;
+    }
     if (priv->sys_acquired) {
         rk_mpi_sys_release();
         priv->sys_acquired = 0;
     }
     rk_aiq_3a_stop(priv);
-    return -EIO;
+    return ret;
 }
 
 /* ---------------------------------------------------------------------------
@@ -953,14 +960,21 @@ static int rk_camera_parse_idx(const char *id) {
     return (int)idx;
 }
 
-/* env 读取实例级整型配置（DARKOS_CAMERA{idx}_VI_DEV 等），未设置返回 def */
+/* env 读取实例级整型配置（DARKOS_CAMERA{idx}_VI_DEV 等），非法值回落 def */
 static int rk_camera_env_int(int idx, const char *key, int def) {
     char name[64];
     const char *val;
+    char *end;
+    long v;
 
     snprintf(name, sizeof(name), "DARKOS_CAMERA%d_%s", idx, key);
     val = getenv(name);
-    return (val != NULL && val[0] != '\0') ? atoi(val) : def;
+    if (val == NULL || val[0] == '\0')
+        return def;
+    v = strtol(val, &end, 10);
+    if (end == val || *end != '\0' || v < 0 || v > 4096)
+        return def;
+    return (int)v;
 }
 
 static int rk_camera_open(const hw_module_t *module, const char *id, hw_device_t **device) {
@@ -1013,7 +1027,7 @@ static int rk_camera_open(const hw_module_t *module, const char *id, hw_device_t
     priv->prv_pool = MB_INVALID_POOLID;
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = CAMERA_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = rk_camera_close;
     dev->ops = &rk_camera_ops;

@@ -4,6 +4,7 @@
 #include <audio/types.h>
 #include <hardware/hardware.h>
 
+#include <errno.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -20,6 +21,7 @@ extern "C" {
 
 #define AUDIO_HARDWARE_MODULE_ID "audio"
 #define AUDIO_MODULE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
+#define AUDIO_DEVICE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
 
 /* 通用控制项 id */
 #define AUDIO_CTRL_VOLUME 1   /* 播放音量 0-100 */
@@ -57,10 +59,21 @@ struct audio_device {
 
 static inline int audio_open(const hw_module_t *module, audio_device_t **device) {
     hw_device_t *hwdev = NULL;
-    int rc = module->methods->open(module, AUDIO_HARDWARE_MODULE_ID, &hwdev);
+    audio_device_t *dev;
+    int rc;
+
+    /* 接口版本不匹配直接拒绝，避免拿到不兼容的 ops 表 */
+    if (!hw_module_supports(module, AUDIO_MODULE_API_VERSION_1_0))
+        return -EPROTONOSUPPORT;
+    rc = module->methods->open(module, AUDIO_HARDWARE_MODULE_ID, &hwdev);
     if (rc != 0)
         return rc;
-    *device = (audio_device_t *)hwdev;
+    dev = (audio_device_t *)hwdev;
+    if (dev->ops == NULL || !hw_device_supports(&dev->common, AUDIO_DEVICE_API_VERSION_1_0)) {
+        dev->common.close(&dev->common);
+        return -EPROTONOSUPPORT;
+    }
+    *device = dev;
     return 0;
 }
 

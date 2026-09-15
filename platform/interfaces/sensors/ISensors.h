@@ -4,6 +4,7 @@
 #include <hardware/hardware.h>
 #include <sensors/types.h>
 
+#include <errno.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -19,6 +20,7 @@ extern "C" {
 
 #define SENSORS_HARDWARE_MODULE_ID "sensors"
 #define SENSORS_MODULE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
+#define SENSORS_DEVICE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
 
 typedef struct sensors_device sensors_device_t;
 
@@ -47,10 +49,22 @@ struct sensors_device {
 
 static inline int sensors_open(const hw_module_t *module, sensors_device_t **device) {
     hw_device_t *hwdev = NULL;
-    int rc = module->methods->open(module, SENSORS_HARDWARE_MODULE_ID, &hwdev);
+    sensors_device_t *dev;
+    int rc;
+
+    /* 接口版本不匹配直接拒绝，避免拿到不兼容的 ops 表 */
+    if (!hw_module_supports(module, SENSORS_MODULE_API_VERSION_1_0))
+        return -EPROTONOSUPPORT;
+    rc = module->methods->open(module, SENSORS_HARDWARE_MODULE_ID, &hwdev);
     if (rc != 0)
         return rc;
-    *device = (sensors_device_t *)hwdev;
+    dev = (sensors_device_t *)hwdev;
+    if (dev->ops == NULL ||
+        !hw_device_supports(&dev->common, SENSORS_DEVICE_API_VERSION_1_0)) {
+        dev->common.close(&dev->common);
+        return -EPROTONOSUPPORT;
+    }
+    *device = dev;
     return 0;
 }
 

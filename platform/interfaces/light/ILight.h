@@ -4,6 +4,7 @@
 #include <hardware/hardware.h>
 #include <light/types.h>
 
+#include <errno.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -19,6 +20,7 @@ extern "C" {
 
 #define LIGHT_HARDWARE_MODULE_ID "light"
 #define LIGHT_MODULE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
+#define LIGHT_DEVICE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
 
 typedef struct light_device light_device_t;
 
@@ -39,10 +41,22 @@ struct light_device {
 
 static inline int light_open(const hw_module_t *module, light_device_t **device) {
     hw_device_t *hwdev = NULL;
-    int rc = module->methods->open(module, LIGHT_HARDWARE_MODULE_ID, &hwdev);
+    light_device_t *dev;
+    int rc;
+
+    /* 接口版本不匹配直接拒绝，避免拿到不兼容的 ops 表 */
+    if (!hw_module_supports(module, LIGHT_MODULE_API_VERSION_1_0))
+        return -EPROTONOSUPPORT;
+    rc = module->methods->open(module, LIGHT_HARDWARE_MODULE_ID, &hwdev);
     if (rc != 0)
         return rc;
-    *device = (light_device_t *)hwdev;
+    dev = (light_device_t *)hwdev;
+    if (dev->ops == NULL ||
+        !hw_device_supports(&dev->common, LIGHT_DEVICE_API_VERSION_1_0)) {
+        dev->common.close(&dev->common);
+        return -EPROTONOSUPPORT;
+    }
+    *device = dev;
     return 0;
 }
 

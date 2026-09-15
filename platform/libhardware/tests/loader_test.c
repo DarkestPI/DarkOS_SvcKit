@@ -48,5 +48,28 @@ int main(void) {
     ++failures;
   }
 
+  /* 版本兼容语义：主版本一致且实现 minor >= 调用方 minor */
+  if (!hw_version_compatible(HARDWARE_MAKE_API_VERSION(1, 0),
+                             HARDWARE_MAKE_API_VERSION(1, 0)) ||
+      !hw_version_compatible(HARDWARE_MAKE_API_VERSION(1, 2),
+                             HARDWARE_MAKE_API_VERSION(1, 0)) ||
+      hw_version_compatible(HARDWARE_MAKE_API_VERSION(1, 0),
+                            HARDWARE_MAKE_API_VERSION(1, 2)) ||
+      hw_version_compatible(HARDWARE_MAKE_API_VERSION(2, 0),
+                            HARDWARE_MAKE_API_VERSION(1, 0)) ||
+      hw_version_compatible(HARDWARE_MAKE_API_VERSION(1, 0),
+                            HARDWARE_MAKE_API_VERSION(2, 0))) {
+    fprintf(stderr, "hw_version_compatible semantics are wrong\n");
+    ++failures;
+  }
+  /* fake 模块声明 1.0：满足 1.0 需求，不满足 1.1 / 2.0 */
+  if (first != NULL &&
+      (!hw_module_supports(first, HARDWARE_MAKE_API_VERSION(1, 0)) ||
+       hw_module_supports(first, HARDWARE_MAKE_API_VERSION(1, 1)) ||
+       hw_module_supports(first, HARDWARE_MAKE_API_VERSION(2, 0)))) {
+    fprintf(stderr, "hw_module_supports did not match fake module version\n");
+    ++failures;
+  }
+
   return failures == 0 ? 0 : 1;
 }

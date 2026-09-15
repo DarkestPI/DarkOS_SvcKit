@@ -433,7 +433,7 @@ static int rk_audio_open(const hw_module_t *module, const char *id, hw_device_t 
     priv->mic_gain = 50;
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = AUDIO_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = rk_audio_close;
     dev->ops = &rk_audio_ops;

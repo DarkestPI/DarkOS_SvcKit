@@ -4,6 +4,7 @@
 #include <hardware/hardware.h>
 #include <media/types.h>
 
+#include <errno.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -25,6 +26,7 @@ extern "C" {
 
 #define MEDIA_CODEC_HARDWARE_MODULE_ID "codec"
 #define MEDIA_CODEC_MODULE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
+#define MEDIA_CODEC_DEVICE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
 
 typedef struct codec_device codec_device_t;
 
@@ -72,10 +74,22 @@ struct codec_device {
 static inline int codec_open_by_id(const hw_module_t *module, const char *id,
                                    codec_device_t **device) {
     hw_device_t *hwdev = NULL;
-    int rc = module->methods->open(module, id, &hwdev);
+    codec_device_t *dev;
+    int rc;
+
+    /* 接口版本不匹配直接拒绝，避免拿到不兼容的 ops 表 */
+    if (!hw_module_supports(module, MEDIA_CODEC_MODULE_API_VERSION_1_0))
+        return -EPROTONOSUPPORT;
+    rc = module->methods->open(module, id, &hwdev);
     if (rc != 0)
         return rc;
-    *device = (codec_device_t *)hwdev;
+    dev = (codec_device_t *)hwdev;
+    if (dev->ops == NULL ||
+        !hw_device_supports(&dev->common, MEDIA_CODEC_DEVICE_API_VERSION_1_0)) {
+        dev->common.close(&dev->common);
+        return -EPROTONOSUPPORT;
+    }
+    *device = dev;
     return 0;
 }
 

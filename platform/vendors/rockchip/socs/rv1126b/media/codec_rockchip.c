@@ -553,7 +553,7 @@ static int rk_codec_open(const hw_module_t *module, const char *id, hw_device_t 
     priv->stream_pool = MB_INVALID_POOLID;
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = 0;
+    dev->common.version = MEDIA_CODEC_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = rk_codec_close;
     dev->ops = &rk_codec_ops;

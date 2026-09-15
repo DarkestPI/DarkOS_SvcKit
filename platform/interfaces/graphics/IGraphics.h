@@ -4,6 +4,7 @@
 #include <graphics/types.h>
 #include <hardware/hardware.h>
 
+#include <errno.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -16,6 +17,7 @@ extern "C" {
 
 #define GRAPHICS_HARDWARE_MODULE_ID "graphics"
 #define GRAPHICS_MODULE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
+#define GRAPHICS_DEVICE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
 
 typedef struct graphics_device graphics_device_t;
 
@@ -48,10 +50,22 @@ struct graphics_device {
 
 static inline int graphics_open(const hw_module_t *module, graphics_device_t **device) {
     hw_device_t *hwdev = NULL;
-    int rc = module->methods->open(module, GRAPHICS_HARDWARE_MODULE_ID, &hwdev);
+    graphics_device_t *dev;
+    int rc;
+
+    /* 接口版本不匹配直接拒绝，避免拿到不兼容的 ops 表 */
+    if (!hw_module_supports(module, GRAPHICS_MODULE_API_VERSION_1_0))
+        return -EPROTONOSUPPORT;
+    rc = module->methods->open(module, GRAPHICS_HARDWARE_MODULE_ID, &hwdev);
     if (rc != 0)
         return rc;
-    *device = (graphics_device_t *)hwdev;
+    dev = (graphics_device_t *)hwdev;
+    if (dev->ops == NULL ||
+        !hw_device_supports(&dev->common, GRAPHICS_DEVICE_API_VERSION_1_0)) {
+        dev->common.close(&dev->common);
+        return -EPROTONOSUPPORT;
+    }
+    *device = dev;
     return 0;
 }
 
