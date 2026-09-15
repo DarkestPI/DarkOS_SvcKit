@@ -32,3 +32,5 @@ set_target_properties(hal_host_x86 PROPERTIES
     OUTPUT_NAME "hal.host_x86"
     PREFIX ""
 )
+
+install(TARGETS hal_host_x86 LIBRARY DESTINATION lib/darkos/hal)

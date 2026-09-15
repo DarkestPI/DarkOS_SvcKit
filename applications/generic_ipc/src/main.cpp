@@ -3,17 +3,32 @@
 #include <svc_log.h>
 
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 
 namespace {
 
-constexpr char kTag[] = "rv1126b_ipc";
-constexpr char kDefaultBoardConfig[] = "/etc/board.json";
-constexpr char kDefaultAppConfig[] = "/etc/app.json";
+constexpr char kTag[] = "generic_ipc";
+
+std::filesystem::path defaultConfigDirectory() {
+    if (const char *configured = std::getenv("DARKOS_CONFIG_DIR"); configured && configured[0] != '\0')
+        return configured;
+
+    std::error_code error;
+    const std::filesystem::path executable = std::filesystem::read_symlink("/proc/self/exe", error);
+    if (!error)
+        return executable.parent_path().parent_path() / "etc";
+
+    return "/etc";
+}
 
 struct Options {
-    std::string boardConfig = kDefaultBoardConfig;
-    std::string appConfig = kDefaultAppConfig;
+    explicit Options(const std::filesystem::path &configDirectory)
+        : boardConfig((configDirectory / "board.json").string()),
+          appConfig((configDirectory / "app.json").string()) {}
+
+    std::string boardConfig;
+    std::string appConfig;
 };
 
 bool parseOptions(int argc, char **argv, Options &options) {
@@ -35,7 +50,7 @@ bool parseOptions(int argc, char **argv, Options &options) {
 int main(int argc, char **argv) {
     SVC_LOGI(kTag, "application started");
 
-    Options options;
+    Options options(defaultConfigDirectory());
     if (!parseOptions(argc, argv, options))
         return EXIT_FAILURE;
 

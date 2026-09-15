@@ -1,5 +1,9 @@
 /* Rockit 启动及运行时日志等级控制，协议来自 librockit 自带帮助信息。 */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "rockit_log.h"
 
 #include <errno.h>

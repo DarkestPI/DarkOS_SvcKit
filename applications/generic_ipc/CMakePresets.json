@@ -1,0 +1,31 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "generic_ipc",
+      "displayName": "generic_ipc Ubuntu x86_64 Release",
+      "description": "使用 Ubuntu 本机编译器构建 x86_64 Release 版本",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/ubuntu_x86_64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "DARKOS_BUILD_HAL_IMPLEMENTATIONS": "ON",
+        "DARKOS_PLATFORM": "ubuntu_x86_64",
+        "DARKOS_OUTPUT_ROOT": "${sourceDir}/../../output/generic_ipc"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "generic_ipc",
+      "displayName": "Build generic_ipc Ubuntu x86_64 Release",
+      "configurePreset": "generic_ipc"
+    }
+  ]
+}

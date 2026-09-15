@@ -1,0 +1,55 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Ubuntu x86_64：配置",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--preset", "generic_ipc"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Ubuntu x86_64：构建",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "generic_ipc", "--parallel"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Ubuntu x86_64：配置",
+      "dependsOrder": "sequence",
+      "problemMatcher": ["$gcc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Ubuntu x86_64：清理并重新构建",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "generic_ipc", "--clean-first", "--parallel"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Ubuntu x86_64：配置",
+      "dependsOrder": "sequence",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Ubuntu x86_64：仅清理",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "generic_ipc", "--target", "clean"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Ubuntu x86_64：配置",
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    }
+  ]
+}

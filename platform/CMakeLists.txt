@@ -6,6 +6,7 @@ set(DARKOS_SUPPORTED_PLATFORMS
     ubuntu_x86_64
     allwinner
     artosyn
+    gokemicro
     ingenic
     novatek
     rockchip
@@ -48,14 +49,15 @@ endif()
 set(DARKOS_PLATFORM_RESOLVED "${DARKOS_PLATFORM_RESOLVED}" CACHE INTERNAL
     "Resolved DarkOS platform implementation" FORCE)
 
-# 即使没有启用具体 HAL 实现，也始终建立公共 HAL 依赖图。当前仓库没有
-# libhardware 加载器源码，因此先使用 INTERFACE 骨架目标；加载器补齐后会自动
-# 改为使用 libhardware 子目录提供的真实目标。
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libhardware/CMakeLists.txt")
-    add_subdirectory(libhardware)
+if(DARKOS_PLATFORM_RESOLVED STREQUAL "ubuntu_x86_64")
+    set(DARKOS_HAL_DEFAULT_VARIANT "host_x86")
 else()
-    add_library(hardware_base INTERFACE)
+    set(DARKOS_HAL_DEFAULT_VARIANT "${DARKOS_PLATFORM_RESOLVED}")
 endif()
+
+# libhardware 是应用唯一直接链接的 HAL 运行时部分；厂商实现保持独立插件，
+# 由 hw_get_module() 在运行时加载。
+add_subdirectory(libhardware)
 
 if(NOT TARGET hardware_base)
     message(FATAL_ERROR
@@ -77,13 +79,6 @@ if(DARKOS_BUILD_HAL_IMPLEMENTATIONS)
             "CMAKE_SYSTEM_NAME='${CMAKE_SYSTEM_NAME}', "
             "CMAKE_SYSTEM_PROCESSOR='${CMAKE_SYSTEM_PROCESSOR}'.\n"
             "Set -DDARKOS_PLATFORM=<name> explicitly.")
-    endif()
-
-    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libhardware/CMakeLists.txt")
-        message(FATAL_ERROR
-            "DARKOS_BUILD_HAL_IMPLEMENTATIONS=ON requires "
-            "platform/libhardware/CMakeLists.txt, but the HAL loader is not "
-            "present in this checkout.")
     endif()
 
     set(platform_dir "${CMAKE_CURRENT_SOURCE_DIR}/${DARKOS_PLATFORM_RESOLVED}")
@@ -109,7 +104,9 @@ if(DARKOS_BUILD_HAL_IMPLEMENTATIONS)
             "'${platform_hal_target}'")
     endif()
 
-    target_link_libraries(darkos_platform INTERFACE "${platform_hal_target}")
+    # 保证链接 Application 时插件也被构建，但不把插件写入 Application 的
+    # DT_NEEDED；运行时只通过 libhardware/dlopen 发现具体实现。
+    add_dependencies(darkos_platform "${platform_hal_target}")
     message(STATUS "DarkOS platform implementation: ${DARKOS_PLATFORM_RESOLVED}")
 elseif(DARKOS_PLATFORM_RESOLVED)
     message(STATUS
@@ -121,4 +118,8 @@ endif()
 if(DARKOS_BUILD_EXAMPLES
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/CMakeLists.txt")
     add_subdirectory(examples)
+endif()
+
+if(DARKOS_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    add_subdirectory(tests)
 endif()

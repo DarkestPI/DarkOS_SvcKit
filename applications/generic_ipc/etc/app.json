@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.0.1",
+  "serial_bindings": {
+    "ptz": {
+      "resource": "uart_ptz",
+      "baud": 9600
+    },
+    "device_control": {
+      "resource": "uart_control",
+      "baud": 115200
+    }
+  }
+}

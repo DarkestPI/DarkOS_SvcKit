@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.0.1",
+  "board": "rv1126b_ipc_v1",
+  "compatible_soc": "rockchip_rv1126b",
+  "serial_ports": {
+    "uart_ptz": {
+      "device": "/dev/ttyS1",
+      "electrical": "rs485",
+      "baud_rates": [9600, 19200, 38400, 115200],
+      "exclusive": true
+    },
+    "uart_control": {
+      "device": "/dev/ttyS3",
+      "electrical": "ttl",
+      "baud_rates": [9600, 115200],
+      "exclusive": true
+    }
+  }
+}

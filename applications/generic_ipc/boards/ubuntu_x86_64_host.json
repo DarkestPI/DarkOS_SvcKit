@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.0.1",
+  "board": "ubuntu_x86_64_host",
+  "compatible_soc": "ubuntu_x86_64",
+  "serial_ports": {
+    "uart_ptz": {
+      "device": "/dev/ttyS0",
+      "electrical": "ttl",
+      "baud_rates": [9600, 19200, 38400, 115200],
+      "exclusive": true
+    },
+    "uart_control": {
+      "device": "/dev/ttyS1",
+      "electrical": "ttl",
+      "baud_rates": [9600, 115200],
+      "exclusive": true
+    }
+  }
+}

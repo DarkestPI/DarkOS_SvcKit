@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(rv1126b_ipc VERSION 0.1.0 LANGUAGES C CXX)
+project(generic_ipc VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -19,16 +19,16 @@ endif()
 
 include("${DARKOS_SDK_PATH}/cmake/DarkOS.cmake")
 
-add_executable(rv1126b_ipc
+add_executable(generic_ipc
     src/main.cpp
 )
 
-target_compile_features(rv1126b_ipc PRIVATE cxx_std_17)
+target_compile_features(generic_ipc PRIVATE cxx_std_17)
 
-target_link_libraries(rv1126b_ipc PRIVATE DarkOS::SvcKit)
+target_link_libraries(generic_ipc PRIVATE DarkOS::SvcKit)
 
-set(DARKOS_BOARD "rv1126b_ipc_v1" CACHE STRING
-    "Board configuration packaged with rv1126b_ipc")
+set(DARKOS_BOARD "ubuntu_x86_64_host" CACHE STRING
+    "Board configuration packaged with generic_ipc")
 set(DARKOS_BOARD_CONFIG
     "${CMAKE_CURRENT_SOURCE_DIR}/boards/${DARKOS_BOARD}.json")
 if(NOT EXISTS "${DARKOS_BOARD_CONFIG}")
@@ -37,7 +37,7 @@ if(NOT EXISTS "${DARKOS_BOARD_CONFIG}")
 endif()
 
 if(DARKOS_ENABLE_OUTPUT_LAYOUT)
-    add_custom_command(TARGET rv1126b_ipc POST_BUILD
+    add_custom_command(TARGET generic_ipc POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${DARKOS_BOARD_CONFIG}"
             "${DARKOS_OUTPUT_ROOT}/etc/board.json"
@@ -48,4 +48,4 @@ install(FILES "${DARKOS_BOARD_CONFIG}"
     DESTINATION etc
     RENAME board.json)
 
-darkos_add_application(rv1126b_ipc)
+darkos_add_application(generic_ipc)
