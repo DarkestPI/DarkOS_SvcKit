@@ -50,6 +50,7 @@
     "**/cmake*": true,
     "**/readme.md": true,
     "**/README.md": true,
+    "**/**.md": true,
   },
   // 在 VSCode 文件监视器中排除这些文件/目录。
   "files.watcherExclude": {

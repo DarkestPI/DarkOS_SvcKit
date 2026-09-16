@@ -368,3 +368,14 @@ sequenceDiagram
 
     Note over App,HAL: stop() 返回后，采集、编码和 Sink 工作线程均已退出
 ```
+
+
+Sensor RAW
+ → ISP
+ → NV12
+ → 复制到 VideoFrame
+ → 有界队列
+ → H.264/H.265 编码
+ → 复制到 VideoPacket
+ → shared_ptr 无 payload 复制分发
+ → Sink
