@@ -22,5 +22,5 @@ if(DARKOS_BUILD_TESTS AND DARKOS_BUILD_PROTOCOL_IMPLEMENTATIONS)
     # 端到端出流验证：合成相机 → x264 软编 → RtspServer（真机拉流联调用）
     add_executable(live_probe tests/live_probe.cpp)
     target_link_libraries(live_probe PRIVATE
-        darkos_rtsp hardware camera_interfaces media_interfaces)
+        darkos_rtsp hardware camera_interfaces codec_interfaces)
 endif()

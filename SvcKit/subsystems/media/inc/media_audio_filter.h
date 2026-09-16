@@ -1,11 +1,17 @@
-/**
- * @file media_audio_filter.h
- * @brief 音频滤镜接口
- * @author your_name
- * @date 2026-09-16
- */
 #pragma once
 
-namespace media {
+#include "media_buffer.h"
 
-} // namespace media
+namespace darkos::media {
+
+/** PCM 处理节点，用于重采样、AEC、降噪等。 */
+class AudioFilter {
+public:
+  virtual ~AudioFilter() = default;
+  virtual int process(const AudioFrameView &input, AudioFrameView &output) = 0;
+
+protected:
+  AudioFilter() = default;
+};
+
+} // namespace darkos::media

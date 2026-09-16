@@ -1,12 +1,11 @@
 /**
  * @file software_video_decoder.cpp
  * @brief 软件视频解码
- * @author your_name
  * @date 2026-09-16
  */
 
-#include "media_video_decoder.h"
+#include "media_video_codec.h"
 
-namespace media {
+namespace darkos::media {
 
-} // namespace media
+} // namespace darkos::media

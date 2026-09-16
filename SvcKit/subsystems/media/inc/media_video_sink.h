@@ -1,11 +1,31 @@
-/**
- * @file media_video_sink.h
- * @brief 视频输出（显示）接口
- * @author your_name
- * @date 2026-09-16
- */
 #pragma once
 
-namespace media {
+#include "media_buffer.h"
 
-} // namespace media
+namespace darkos::media {
+
+/** Display 等消费原始视频帧的终点。 */
+class VideoFrameSink {
+public:
+  virtual ~VideoFrameSink() = default;
+  virtual int start() = 0;
+  virtual int stop() = 0;
+  virtual int consume(const VideoFrameView &frame) = 0;
+
+protected:
+  VideoFrameSink() = default;
+};
+
+/** RTSP、录像等消费编码视频包的终点。 */
+class VideoPacketSink {
+public:
+  virtual ~VideoPacketSink() = default;
+  virtual int start() = 0;
+  virtual int stop() = 0;
+  virtual int consume(const EncodedPacketView &packet) = 0;
+
+protected:
+  VideoPacketSink() = default;
+};
+
+} // namespace darkos::media

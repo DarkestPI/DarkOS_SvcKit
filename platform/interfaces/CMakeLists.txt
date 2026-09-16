@@ -3,7 +3,7 @@
 # 用循环统一生成；某包将来需要特殊设置时在循环外单独补即可。
 set(HAL_INTERFACE_PACKAGES
     camera      # 视频输入 VI/ISP
-    media       # 编解码
+    codec       # 编解码
     graphics    # 2D 加速/合成
     display     # 显示输出（VO，本地预览/回放）
     audio       # 音频采集/播放（语音对讲）
@@ -22,6 +22,9 @@ foreach(pkg ${HAL_INTERFACE_PACKAGES})
     target_link_libraries(${pkg}_interfaces INTERFACE hardware_base)
     add_library(DarkOS::${pkg} ALIAS ${pkg}_interfaces)
 endforeach()
+
+# 对外使用语义化的 PascalCase 名称；小写别名暂时保留给其他接口包的既有风格。
+add_library(DarkOS::Codec ALIAS codec_interfaces)
 
 # 聚合目标：一次链接全部接口包（用法：target_link_libraries(x PRIVATE hardware_interfaces)）。
 # 各包仍是 INTERFACE 库，不产生任何编译产物；需要单包精细依赖时仍可单独链。

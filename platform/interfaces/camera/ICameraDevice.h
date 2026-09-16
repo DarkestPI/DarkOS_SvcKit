@@ -44,7 +44,9 @@ typedef struct camera_device_ops {
     int (*set_control)(camera_device_t *dev, uint32_t id, int32_t value);
     int (*get_control)(camera_device_t *dev, uint32_t id, int32_t *value);
 
-    /* 本地预览：把相机画面送显示输出（VO 视频层）。width/height = panel */
+    /* DEPRECATED：预览是 Camera→Display 的管线编排职责，新代码必须通过
+     * SvcKit Media 使用；保留到通用 Platform MediaLink 接住现有 RV1126B
+     * RK_MPI_SYS_Bind 实现后删除。width/height = panel。 */
     int (*preview_start)(camera_device_t *dev, uint32_t width, uint32_t height);
     int (*preview_stop)(camera_device_t *dev);
 

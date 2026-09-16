@@ -1,11 +1,20 @@
-/**
- * @file media_muxer.h
- * @brief 封装/解封装接口
- * @author your_name
- * @date 2026-09-16
- */
 #pragma once
 
-namespace media {
+#include "media_buffer.h"
 
-} // namespace media
+namespace darkos::media {
+
+/** MP4/TS 等音视频封装节点；write 调用保持各自时间戳。 */
+class MediaMuxer {
+public:
+  virtual ~MediaMuxer() = default;
+  virtual int open() = 0;
+  virtual int writeVideo(const EncodedPacketView &packet) = 0;
+  virtual int writeAudio(const EncodedAudioPacketView &packet) = 0;
+  virtual int close() = 0;
+
+protected:
+  MediaMuxer() = default;
+};
+
+} // namespace darkos::media

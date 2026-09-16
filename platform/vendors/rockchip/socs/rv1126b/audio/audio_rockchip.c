@@ -286,6 +286,8 @@ static int rk_audio_read(audio_device_t *dev, audio_buffer_t *buf, int timeout_m
         return -EIO;
     }
     if (frame.u32Len > buf->size) { /* buf->size 入参为容量 */
+        /* 把所需容量返回给上层，使通用 Media 采集线程可以扩容后重试。 */
+        buf->size = frame.u32Len;
         RK_MPI_AI_ReleaseFrame(RK_AI_DEV, RK_AI_CHN, &frame, NULL);
         return -ENOSPC;
     }

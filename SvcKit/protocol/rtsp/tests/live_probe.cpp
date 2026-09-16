@@ -22,7 +22,7 @@
 
 #include <camera/ICameraDevice.h>
 #include <hardware/hardware.h>
-#include <media/ICodec.h>
+#include <codec/ICodec.h>
 
 #include <atomic>
 #include <signal.h>
@@ -77,12 +77,12 @@ class HalFrameSource : public Source {
     int start() {
         if (pool_ == nullptr || scratch_ == nullptr)
             return -1;
-        media_codec_format_t fmt = {};
-        fmt.codec = MEDIA_CODEC_H264;
+        codec_format_t fmt = {};
+        fmt.codec = CODEC_ID_H264;
         fmt.width = width_;
         fmt.height = height_;
         fmt.pixel_format = CAMERA_PIX_FMT_NV12;
-        fmt.bitrate = kBitrate;
+        fmt.bitrate_bps = kBitrate;
         fmt.fps = kFps;
         fmt.gop = kGop;
         int rc = codec_->ops->set_format(codec_, &fmt);
@@ -140,13 +140,13 @@ class HalFrameSource : public Source {
         auto *self = (HalFrameSource *)ctx;
         self->captured_++;
 
-        media_buffer_t in = {};
+        codec_buffer_t in = {};
         in.fd = -1;
         in.data = frame->data;
         in.size = frame->size;
         in.timestamp_ns = frame->timestamp_ns;
 
-        media_buffer_t pkt = {};
+        codec_buffer_t pkt = {};
         pkt.fd = -1;
         pkt.data = self->scratch_;
         pkt.size = (uint32_t)((size_t)self->width_ * self->height_ * 2);
@@ -172,7 +172,7 @@ class HalFrameSource : public Source {
         mp.data = buf->bytes();
         mp.size = pkt.size;
         mp.ptsNs = pkt.timestamp_ns;
-        mp.keyframe = (pkt.flags & MEDIA_BUF_FLAG_KEYFRAME) != 0;
+        mp.keyframe = (pkt.flags & CODEC_BUFFER_FLAG_KEYFRAME) != 0;
         mp.codec = MediaCodec::kH264;
         mp.buf = std::move(buf);
 
@@ -219,7 +219,7 @@ int main() {
     const hw_module_t *camera_mod = nullptr;
     const hw_module_t *codec_mod = nullptr;
     if (hw_get_module(CAMERA_HARDWARE_MODULE_ID, &camera_mod) != 0 ||
-        hw_get_module(MEDIA_CODEC_HARDWARE_MODULE_ID, &codec_mod) != 0) {
+        hw_get_module(CODEC_HARDWARE_MODULE_ID, &codec_mod) != 0) {
         SVC_LOGE(kTag, "hw_get_module failed（检查 DARKOS_HAL_VARIANT / DARKOS_HAL_LIBRARY_PATH）");
         return 1;
     }

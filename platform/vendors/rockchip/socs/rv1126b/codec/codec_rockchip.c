@@ -24,7 +24,7 @@
  */
 
 #include <hardware/hardware.h>
-#include <media/ICodec.h>
+#include <codec/ICodec.h>
 
 #include <errno.h>
 #include <stdint.h>
@@ -51,7 +51,7 @@ typedef struct rk_codec_priv {
     int venc_chn; /* VENC/VDEC 硬件通道 = 实例号 */
     int vdec_chn;
 
-    media_codec_format_t fmt;
+    codec_format_t fmt;
 
     int sys_acquired;
     int encoding; /* VENC 通道已建 */
@@ -105,7 +105,7 @@ static int rk_venc_create(rk_codec_priv_t *priv) {
     attr.stRcAttr.stH264Cbr.u32SrcFrameRateDen = 1;
     attr.stRcAttr.stH264Cbr.fr32DstFrameRateNum = priv->fmt.fps;
     attr.stRcAttr.stH264Cbr.fr32DstFrameRateDen = 1;
-    attr.stRcAttr.stH264Cbr.u32BitRate = priv->fmt.bitrate / 1000; /* MPI 单位 kbps */
+    attr.stRcAttr.stH264Cbr.u32BitRate = priv->fmt.bitrate_bps / 1000; /* MPI 单位 kbps */
     attr.stRcAttr.stH264Cbr.u32StatTime = 1;
 
     attr.stGopAttr.enGopMode = VENC_GOPMODE_NORMALP;
@@ -147,7 +147,7 @@ static void rk_venc_destroy(rk_codec_priv_t *priv) {
 
 /* 组 VIDEO_FRAME_INFO_S：优先用 in->priv 的 MB_BLK 零拷贝；否则池内拷贝。
  * owned_blk 非 NULL 表示池内块，SendFrame 后由调用方归还 */
-static int rk_venc_build_frame(rk_codec_priv_t *priv, const media_buffer_t *in,
+static int rk_venc_build_frame(rk_codec_priv_t *priv, const codec_buffer_t *in,
                                VIDEO_FRAME_INFO_S *vf, MB_BLK *owned_blk) {
     MB_BLK blk = (MB_BLK)in->priv;
 
@@ -181,7 +181,7 @@ static int rk_venc_build_frame(rk_codec_priv_t *priv, const media_buffer_t *in,
     return 0;
 }
 
-static int rk_codec_encode(codec_device_t *dev, const media_buffer_t *in, media_buffer_t *out,
+static int rk_codec_encode(codec_device_t *dev, const codec_buffer_t *in, codec_buffer_t *out,
                            int timeout_ms) {
     rk_codec_priv_t *priv = (rk_codec_priv_t *)dev->priv;
     VIDEO_FRAME_INFO_S vf;
@@ -227,7 +227,7 @@ static int rk_codec_encode(codec_device_t *dev, const media_buffer_t *in, media_
         out->timestamp_ns = pack.u64PTS * 1000ull;
         if (pack.DataType.enH264EType == H264E_NALU_IDRSLICE ||
             pack.DataType.enH264EType == H264E_NALU_ISLICE)
-            out->flags |= MEDIA_BUF_FLAG_KEYFRAME;
+            out->flags |= CODEC_BUFFER_FLAG_KEYFRAME;
         rc = 0;
     }
     RK_MPI_VENC_ReleaseStream(priv->venc_chn, &stream);
@@ -290,7 +290,7 @@ static void rk_vdec_destroy(rk_codec_priv_t *priv) {
     }
 }
 
-static int rk_codec_decode(codec_device_t *dev, const media_buffer_t *in, media_buffer_t *out,
+static int rk_codec_decode(codec_device_t *dev, const codec_buffer_t *in, codec_buffer_t *out,
                            int timeout_ms) {
     rk_codec_priv_t *priv = (rk_codec_priv_t *)dev->priv;
     VDEC_STREAM_S st;
@@ -371,7 +371,7 @@ static int rk_codec_decode(codec_device_t *dev, const media_buffer_t *in, media_
  * 设备操作实现
  * ------------------------------------------------------------------------- */
 
-static int rk_codec_get_capabilities(codec_device_t *dev, media_codec_caps_t *caps) {
+static int rk_codec_get_capabilities(codec_device_t *dev, codec_caps_t *caps) {
     (void)dev;
     if (caps == NULL)
         return -EINVAL;
@@ -380,16 +380,16 @@ static int rk_codec_get_capabilities(codec_device_t *dev, media_codec_caps_t *ca
     caps->min_height = 128;
     caps->max_width = 3072; /* RV1126B VENC 上限约 3K */
     caps->max_height = 3072;
-    caps->supported_codecs = MEDIA_CAPS_CODEC_H264; /* 编解码均为 H.264 */
+    caps->supported_codecs = CODEC_CAPS_H264; /* 编解码均为 H.264 */
     return 0;
 }
 
-static int rk_codec_set_format(codec_device_t *dev, const media_codec_format_t *fmt) {
+static int rk_codec_set_format(codec_device_t *dev, const codec_format_t *fmt) {
     rk_codec_priv_t *priv = (rk_codec_priv_t *)dev->priv;
 
     if (fmt == NULL)
         return -EINVAL;
-    if (fmt->codec != MEDIA_CODEC_H264)
+    if (fmt->codec != CODEC_ID_H264)
         return -EINVAL; /* 当前仅实现 H.264 硬编/硬解 */
     if (fmt->pixel_format != 0x3231564e)
         return -EINVAL; /* 原始帧仅接 NV12（'NV12'，相机默认输出） */
@@ -400,7 +400,7 @@ static int rk_codec_set_format(codec_device_t *dev, const media_codec_format_t *
     return 0;
 }
 
-static int rk_codec_get_format(codec_device_t *dev, media_codec_format_t *fmt) {
+static int rk_codec_get_format(codec_device_t *dev, codec_format_t *fmt) {
     rk_codec_priv_t *priv = (rk_codec_priv_t *)dev->priv;
     if (fmt == NULL)
         return -EINVAL;
@@ -464,7 +464,7 @@ static int rk_codec_set_rc_param(codec_device_t *dev, uint32_t bitrate_bps) {
     attr.stRcAttr.stH264Cbr.u32BitRate = bitrate_bps / 1000; /* MPI 单位 kbps */
     if (RK_MPI_VENC_SetChnAttr(priv->venc_chn, &attr) != RK_SUCCESS)
         return -EIO;
-    priv->fmt.bitrate = bitrate_bps; /* 记账：get_format 透出最新值 */
+    priv->fmt.bitrate_bps = bitrate_bps; /* 记账：get_format 透出最新值 */
     return 0;
 }
 
@@ -501,7 +501,7 @@ static int rk_codec_close(hw_device_t *device) {
 
 /* 解析 open id："codec"/"codec0" → 0，"codecN" → N；非法返回 -1 */
 static int rk_codec_parse_idx(const char *id) {
-    const char *prefix = MEDIA_CODEC_HARDWARE_MODULE_ID; /* "codec" */
+    const char *prefix = CODEC_HARDWARE_MODULE_ID; /* "codec" */
     size_t plen = strlen(prefix);
     long idx;
     char *end;
@@ -542,18 +542,18 @@ static int rk_codec_open(const hw_module_t *module, const char *id, hw_device_t 
     priv->venc_chn = idx;
     priv->vdec_chn = idx;
 
-    priv->fmt = (media_codec_format_t){.codec = MEDIA_CODEC_H264,
+    priv->fmt = (codec_format_t){.codec = CODEC_ID_H264,
                                        .width = 1920,
                                        .height = 1080,
                                        .pixel_format = 0x3231564e, /* 'NV12' */
-                                       .bitrate = 2 * 1000 * 1000,
+                                       .bitrate_bps = 2 * 1000 * 1000,
                                        .fps = 30,
                                        .gop = 30};
     priv->raw_pool = MB_INVALID_POOLID;
     priv->stream_pool = MB_INVALID_POOLID;
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = MEDIA_CODEC_DEVICE_API_VERSION_1_0;
+    dev->common.version = CODEC_DEVICE_API_VERSION_1_0;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = rk_codec_close;
     dev->ops = &rk_codec_ops;
@@ -573,9 +573,9 @@ static struct hw_module_methods_t rk_codec_methods = {
 
 struct hw_module_t HMI_codec = {
     .tag = HARDWARE_MODULE_TAG,
-    .module_api_version = MEDIA_CODEC_MODULE_API_VERSION_1_0,
+    .module_api_version = CODEC_MODULE_API_VERSION_1_0,
     .hal_api_version = HARDWARE_API_VERSION_1_0,
-    .id = MEDIA_CODEC_HARDWARE_MODULE_ID,
+    .id = CODEC_HARDWARE_MODULE_ID,
     .name = "Rockchip RV1126B Codec HAL (MPI VENC/VDEC H.264)",
     .author = "DarkOS",
     .methods = &rk_codec_methods,

@@ -11,10 +11,14 @@ target_link_libraries(svckit_control INTERFACE svckit_base svckit_control_events
 add_library(svckit_peripheral INTERFACE)
 target_link_libraries(svckit_peripheral INTERFACE svckit_base DarkOS::Platform)
 
-foreach(component analytics audio media networking)
+foreach(component analytics audio networking)
     add_library(svckit_${component} INTERFACE)
     target_link_libraries(svckit_${component} INTERFACE svckit_base)
 endforeach()
+
+# Media 是对上层暴露的真实媒体框架，内部通过 Platform Camera/Codec SPI
+# 访问硬件；Application 和协议层不应再自行拼接 HAL 设备。
+add_subdirectory(media)
 
 target_link_libraries(svckit_media INTERFACE svckit_stream)
 target_link_libraries(svckit_audio INTERFACE DarkOS::audio)

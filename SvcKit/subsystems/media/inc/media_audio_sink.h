@@ -1,11 +1,31 @@
-/**
- * @file media_audio_sink.h
- * @brief 音频输出（播放）接口
- * @author your_name
- * @date 2026-09-16
- */
 #pragma once
 
-namespace media {
+#include "media_buffer.h"
 
-} // namespace media
+namespace darkos::media {
+
+/** 扬声器等消费 PCM 的终点。 */
+class AudioFrameSink {
+public:
+  virtual ~AudioFrameSink() = default;
+  virtual int start() = 0;
+  virtual int stop() = 0;
+  virtual int consume(const AudioFrameView &frame) = 0;
+
+protected:
+  AudioFrameSink() = default;
+};
+
+/** RTSP、录像等消费编码音频包的终点。 */
+class AudioPacketSink {
+public:
+  virtual ~AudioPacketSink() = default;
+  virtual int start() = 0;
+  virtual int stop() = 0;
+  virtual int consume(const EncodedAudioPacketView &packet) = 0;
+
+protected:
+  AudioPacketSink() = default;
+};
+
+} // namespace darkos::media

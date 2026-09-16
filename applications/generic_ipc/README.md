@@ -28,8 +28,11 @@ output/generic_ipc/
 ./output/generic_ipc/bin/generic_ipc
 ```
 
-启动时还会通过 `hw_get_module()` 从同一输出树的 `lib/hal.host_x86.so` 加载
-Camera、Codec、Audio 和 Serial 模块。`libhardware` 会自动搜索可执行文件旁边的
+启动时会从同一输出树的 `lib/hal.host_x86.so` 加载 HAL。Camera、Codec 和 Audio
+只由 SvcKit Media 内部加载，Serial 尚未服务化，由 Application 直接验证。
+Application 通过 `createMediaPipeline()` 同时启动一条 320×240@15fps 的 H.264
+视频管线和一条 16kHz 单声道 S16LE PCM 麦克风采集管线，两路各收到至少 10 个
+数据块后停止。`libhardware` 会自动搜索可执行文件旁边的
 `../lib`，所以使用标准 `bin/lib/etc` 布局时不需要设置额外环境变量。
 
 也可以使用环境变量统一替换配置目录，或分别通过命令行覆盖配置文件：
@@ -55,4 +58,5 @@ DARKOS_HAL_LIBRARY_PATH=/path/to/hal/lib \
 `/dev/ttyACM*` 或其他设备节点。
 
 当前应用完成 Board/App 配置解析、Schema 校验、串口资源存在性、波特率和独占冲突
-校验；尚未打开真实串口或启动 PTZ、控制协议服务。
+校验，并通过 SvcKit Media 验证 Camera→Codec 视频和 Audio PCM 采集管线；尚未
+打开真实串口或启动 PTZ、控制协议服务。

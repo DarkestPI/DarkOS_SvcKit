@@ -31,13 +31,13 @@ if(DARKOS_SOC_RESOLVED STREQUAL "rv1126b")
         list(APPEND rockchip_hal_sources
             ${rockchip_soc_root}/camera/camera_rockchip.c
             common/mpi_sys_guard.c
-            ${rockchip_soc_root}/media/codec_rockchip.c
+            ${rockchip_soc_root}/codec/codec_rockchip.c
             ${rockchip_soc_root}/audio/audio_rockchip.c
             ${rockchip_soc_root}/display/display_rockchip.c
             ${rockchip_soc_root}/graphics/graphics_rockchip.c)
         list(APPEND rockchip_hal_libraries
             camera_interfaces
-            media_interfaces
+            codec_interfaces
             audio_interfaces
             display_interfaces
             graphics_interfaces

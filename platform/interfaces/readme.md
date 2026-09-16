@@ -12,7 +12,7 @@ INTERFACE 库（`DarkOS::<pkg>` / 聚合 `hardware_interfaces`），实现侧
 ├── gnss            # 定位（GPS/北斗等）
 ├── graphics        # 2D 加速 合成
 ├── light           # 指示灯/红外/白光补光（GPIO/PWM）
-├── media           # 多媒体编解码（模块 id "codec"）
+├── codec           # 硬件编解码（模块 id "codec"）
 ├── sensors         # 传感器（光敏/温度/加速度等）
 ├── serial          # 串口（termios 实现位于 shared/linux，透出 fd）
 └── wifi            # WIFI 功能
