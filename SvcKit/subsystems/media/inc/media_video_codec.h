@@ -5,7 +5,7 @@
 
 namespace darkos::media {
 
-/** 原始视频帧到编码包的同步转换节点。输出 view 有效期到下次 encode。 */
+/** 原始视频帧到拥有生命周期的编码包。 */
 class VideoEncoder {
 public:
   virtual ~VideoEncoder() = default;
@@ -16,8 +16,7 @@ public:
   virtual int start() = 0;
   virtual int stop() = 0;
   virtual bool running() const noexcept = 0;
-  virtual int encode(const VideoFrameView &frame,
-                     EncodedPacketView &packet) = 0;
+  virtual int encode(const VideoFrame &frame, VideoPacketPtr &packet) = 0;
   virtual const VideoEncoderConfig &config() const noexcept = 0;
 
 protected:
@@ -35,8 +34,7 @@ public:
   virtual int start() = 0;
   virtual int stop() = 0;
   virtual bool running() const noexcept = 0;
-  virtual int decode(const EncodedPacketView &packet,
-                     VideoFrameView &frame) = 0;
+  virtual int decode(const VideoPacket &packet, VideoFramePtr &frame) = 0;
 
 protected:
   VideoDecoder() = default;

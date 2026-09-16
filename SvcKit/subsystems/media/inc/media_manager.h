@@ -16,11 +16,9 @@ public:
   virtual ~MediaManager() = default;
   virtual std::unique_ptr<MediaPipeline>
   createVideoPipeline(const VideoPipelineConfig &config,
-                      PacketCallback callback, std::string &error) = 0;
+                      std::string &error) = 0;
   virtual std::unique_ptr<MediaPipeline>
-  createAvPipeline(const MediaPipelineConfig &config,
-                   PacketCallback videoCallback,
-                   AudioFrameCallback audioCallback, std::string &error) = 0;
+  createAvPipeline(const MediaPipelineConfig &config, std::string &error) = 0;
 
 protected:
   MediaManager() = default;

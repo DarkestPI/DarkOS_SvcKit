@@ -9,8 +9,8 @@ class MediaMuxer {
 public:
   virtual ~MediaMuxer() = default;
   virtual int open() = 0;
-  virtual int writeVideo(const EncodedPacketView &packet) = 0;
-  virtual int writeAudio(const EncodedAudioPacketView &packet) = 0;
+  virtual int writeVideo(VideoPacketPtr packet) = 0;
+  virtual int writeAudio(AudioPacketPtr packet) = 0;
   virtual int close() = 0;
 
 protected:

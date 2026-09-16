@@ -18,8 +18,7 @@ public:
   virtual int start() = 0;
   virtual int stop() = 0;
   virtual bool running() const noexcept = 0;
-  virtual int encode(const AudioFrameView &frame,
-                     EncodedAudioPacketView &packet) = 0;
+  virtual int encode(const AudioFrame &frame, AudioPacketPtr &packet) = 0;
   virtual const AudioEncoderConfig &config() const noexcept = 0;
 
 protected:
@@ -36,8 +35,7 @@ public:
   virtual int start() = 0;
   virtual int stop() = 0;
   virtual bool running() const noexcept = 0;
-  virtual int decode(const EncodedAudioPacketView &packet,
-                     AudioFrameView &frame) = 0;
+  virtual int decode(const AudioPacket &packet, AudioFramePtr &frame) = 0;
 
 protected:
   AudioDecoder() = default;

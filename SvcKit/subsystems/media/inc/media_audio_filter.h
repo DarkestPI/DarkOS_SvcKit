@@ -8,7 +8,7 @@ namespace darkos::media {
 class AudioFilter {
 public:
   virtual ~AudioFilter() = default;
-  virtual int process(const AudioFrameView &input, AudioFrameView &output) = 0;
+  virtual int process(AudioFramePtr input, AudioFramePtr &output) = 0;
 
 protected:
   AudioFilter() = default;

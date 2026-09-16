@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <new>
 #include <utility>
 #include <vector>
 
@@ -95,34 +96,44 @@ public:
 
   bool running() const noexcept override { return running_.load(); }
 
-  int encode(const AudioFrameView &frame,
-             EncodedAudioPacketView &packet) override {
+  int encode(const AudioFrame &frame, AudioPacketPtr &packet) override {
     if (!running_.load())
       return -EPIPE;
-    if (frame.data == nullptr || frame.size % sizeof(std::int16_t) != 0 ||
+    if (frame.buffer == nullptr ||
+        frame.buffer->size() % sizeof(std::int16_t) != 0 ||
         frame.sampleFormat != AudioSampleFormat::PcmS16Le ||
         frame.sampleRate != input_.sampleRate ||
         frame.channelCount != input_.channelCount)
       return -EINVAL;
 
-    if (config_.codec == AudioCodec::Pcm) {
-      output_.assign(frame.data, frame.data + frame.size);
-    } else {
-      const std::size_t sampleCount = frame.size / sizeof(std::int16_t);
-      output_.resize(sampleCount);
-      for (std::size_t index = 0; index < sampleCount; ++index) {
-        std::int16_t sample;
-        std::memcpy(&sample, frame.data + index * sizeof(sample),
-                    sizeof(sample));
-        output_[index] = config_.codec == AudioCodec::G711A
-                             ? linearToAlaw(sample)
-                             : linearToUlaw(sample);
+    try {
+      std::vector<std::uint8_t> output;
+      if (config_.codec == AudioCodec::Pcm) {
+        packet = std::make_shared<const AudioPacket>(
+            AudioPacket{frame.buffer, frame.timestampNs, config_.codec,
+                        frame.sampleRate, frame.channelCount});
+        return 0;
+      } else {
+        const std::size_t sampleCount =
+            frame.buffer->size() / sizeof(std::int16_t);
+        output.resize(sampleCount);
+        for (std::size_t index = 0; index < sampleCount; ++index) {
+          std::int16_t sample;
+          std::memcpy(&sample, frame.buffer->data() + index * sizeof(sample),
+                      sizeof(sample));
+          output[index] = config_.codec == AudioCodec::G711A
+                              ? linearToAlaw(sample)
+                              : linearToUlaw(sample);
+        }
       }
+      auto buffer = std::make_shared<const MediaBuffer>(std::move(output));
+      packet = std::make_shared<const AudioPacket>(
+          AudioPacket{std::move(buffer), frame.timestampNs, config_.codec,
+                      frame.sampleRate, frame.channelCount});
+      return 0;
+    } catch (const std::bad_alloc &) {
+      return -ENOMEM;
     }
-    packet = EncodedAudioPacketView{output_.data(),    output_.size(),
-                                    frame.timestampNs, config_.codec,
-                                    frame.sampleRate,  frame.channelCount};
-    return 0;
   }
 
   const AudioEncoderConfig &config() const noexcept override { return config_; }
@@ -130,7 +141,6 @@ public:
 private:
   AudioEncoderConfig config_;
   AudioCaptureConfig input_;
-  std::vector<std::uint8_t> output_;
   std::atomic<bool> running_{false};
 };
 
@@ -151,47 +161,53 @@ public:
 
   bool running() const noexcept override { return running_.load(); }
 
-  int decode(const EncodedAudioPacketView &packet,
-             AudioFrameView &frame) override {
+  int decode(const AudioPacket &packet, AudioFramePtr &frame) override {
     if (!running_.load())
       return -EPIPE;
-    if (packet.data == nullptr || packet.codec != codec_ ||
+    if (packet.buffer == nullptr || packet.codec != codec_ ||
         packet.sampleRate != outputFormat_.sampleRate ||
         packet.channelCount != outputFormat_.channelCount)
       return -EINVAL;
 
-    if (codec_ == AudioCodec::Pcm) {
-      output_.assign(packet.data, packet.data + packet.size);
-    } else {
-      if (packet.size >
-          std::numeric_limits<std::size_t>::max() / sizeof(std::int16_t))
-        return -EOVERFLOW;
-      output_.resize(packet.size * sizeof(std::int16_t));
-      for (std::size_t index = 0; index < packet.size; ++index) {
-        const std::int16_t sample = codec_ == AudioCodec::G711A
-                                        ? alawToLinear(packet.data[index])
-                                        : ulawToLinear(packet.data[index]);
-        std::memcpy(output_.data() + index * sizeof(sample), &sample,
-                    sizeof(sample));
+    try {
+      MediaBufferPtr buffer;
+      if (codec_ == AudioCodec::Pcm) {
+        buffer = packet.buffer;
+      } else {
+        if (packet.buffer->size() >
+            std::numeric_limits<std::size_t>::max() / sizeof(std::int16_t))
+          return -EOVERFLOW;
+        std::vector<std::uint8_t> output(packet.buffer->size() *
+                                         sizeof(std::int16_t));
+        for (std::size_t index = 0; index < packet.buffer->size(); ++index) {
+          const std::int16_t sample =
+              codec_ == AudioCodec::G711A
+                  ? alawToLinear(packet.buffer->data()[index])
+                  : ulawToLinear(packet.buffer->data()[index]);
+          std::memcpy(output.data() + index * sizeof(sample), &sample,
+                      sizeof(sample));
+        }
+        buffer = std::make_shared<const MediaBuffer>(std::move(output));
       }
+      const std::uint32_t bytesPerFrame =
+          outputFormat_.channelCount * sizeof(std::int16_t);
+      frame = std::make_shared<const AudioFrame>(AudioFrame{
+          std::move(buffer), packet.timestampNs, outputFormat_.sampleRate,
+          outputFormat_.channelCount,
+          static_cast<std::uint32_t>(packet.buffer->size() /
+                                     (codec_ == AudioCodec::Pcm
+                                          ? bytesPerFrame
+                                          : outputFormat_.channelCount)),
+          AudioSampleFormat::PcmS16Le});
+      return 0;
+    } catch (const std::bad_alloc &) {
+      return -ENOMEM;
     }
-    const std::uint32_t bytesPerFrame =
-        outputFormat_.channelCount * sizeof(std::int16_t);
-    frame = AudioFrameView{
-        output_.data(),
-        output_.size(),
-        packet.timestampNs,
-        outputFormat_.sampleRate,
-        outputFormat_.channelCount,
-        static_cast<std::uint32_t>(output_.size() / bytesPerFrame),
-        AudioSampleFormat::PcmS16Le};
-    return 0;
   }
 
 private:
   AudioCodec codec_;
   AudioCaptureConfig outputFormat_;
-  std::vector<std::uint8_t> output_;
   std::atomic<bool> running_{false};
 };
 

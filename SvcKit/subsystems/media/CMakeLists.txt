@@ -1,8 +1,10 @@
 add_library(svckit_media STATIC
+    src/buffer/media_buffer.cpp
     src/core/media_pipeline.cpp
     src/core/media_manager.cpp
     src/factory/media_factory.cpp
     src/codec/g711_audio_codec.cpp
+    src/sink/probe_sink.cpp
 )
 
 target_include_directories(svckit_media

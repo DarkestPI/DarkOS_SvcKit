@@ -88,13 +88,14 @@ public:
     camera_close(device_);
   }
 
-  int start(VideoFrameCallback callback) override {
+  int start(FrameHandler handler, ErrorHandler errorHandler) override {
     const std::lock_guard<std::mutex> lock(mutex_);
     if (running_.load())
       return -EALREADY;
-    if (!callback)
+    if (!handler)
       return -EINVAL;
-    callback_ = std::move(callback);
+    handler_ = std::move(handler);
+    errorHandler_ = std::move(errorHandler);
     running_.store(true);
     int rc = device_->ops->set_frame_callback(
         device_, &PlatformVideoSource::onHalFrame, this);
@@ -102,7 +103,8 @@ public:
       rc = device_->ops->start(device_);
     if (rc != 0) {
       device_->ops->set_frame_callback(device_, nullptr, nullptr);
-      callback_ = {};
+      handler_ = {};
+      errorHandler_ = {};
       running_.store(false);
     }
     return rc;
@@ -114,7 +116,8 @@ public:
       return 0;
     const int rc = device_->ops->stop(device_);
     device_->ops->set_frame_callback(device_, nullptr, nullptr);
-    callback_ = {};
+    handler_ = {};
+    errorHandler_ = {};
     return rc;
   }
 
@@ -130,30 +133,37 @@ private:
     if (!fromHalPixelFormat(frame->pixel_format, pixelFormat)) {
       SVC_LOGE(kTag, "camera returned unsupported pixel format: %u",
                frame->pixel_format);
+      if (self->errorHandler_)
+        self->errorHandler_(-ENOTSUP,
+                            "camera returned unsupported pixel format");
       return 0;
     }
-    const VideoFrameView view{static_cast<const std::uint8_t *>(frame->data),
-                              frame->size,
-                              frame->fd,
-                              frame->timestamp_ns,
-                              frame->width,
-                              frame->height,
-                              frame->stride,
-                              pixelFormat,
-                              frame->priv};
     try {
-      self->callback_(view);
+      auto buffer = copyMediaBuffer(frame->data, frame->size);
+      if (buffer == nullptr) {
+        if (self->errorHandler_)
+          self->errorHandler_(-ENOMEM, "copy camera frame failed");
+        return 0;
+      }
+      self->handler_(std::make_shared<const VideoFrame>(
+          VideoFrame{std::move(buffer), frame->timestamp_ns, frame->width,
+                     frame->height, frame->stride, pixelFormat}));
     } catch (const std::exception &exception) {
       SVC_LOGE(kTag, "video source callback threw: %s", exception.what());
+      if (self->errorHandler_)
+        self->errorHandler_(-EFAULT, "video frame handler threw");
     } catch (...) {
       SVC_LOGE(kTag, "video source callback threw an unknown exception");
+      if (self->errorHandler_)
+        self->errorHandler_(-EFAULT, "video frame handler threw");
     }
     return 0;
   }
 
   camera_device_t *device_;
   VideoCaptureConfig format_;
-  VideoFrameCallback callback_;
+  FrameHandler handler_;
+  ErrorHandler errorHandler_;
   std::atomic<bool> running_{false};
   std::mutex mutex_;
 };
@@ -188,18 +198,19 @@ public:
 
   bool running() const noexcept override { return running_.load(); }
 
-  int encode(const VideoFrameView &frame, EncodedPacketView &packet) override {
+  int encode(const VideoFrame &frame, VideoPacketPtr &packet) override {
     if (!running_.load())
       return -EPIPE;
-    if (frame.size > std::numeric_limits<std::uint32_t>::max())
+    if (frame.buffer == nullptr ||
+        frame.buffer->size() > std::numeric_limits<std::uint32_t>::max())
       return -EOVERFLOW;
 
     codec_buffer_t input{};
-    input.fd = frame.fd;
-    input.data = const_cast<std::uint8_t *>(frame.data);
-    input.size = static_cast<std::uint32_t>(frame.size);
+    input.fd = -1;
+    input.data = const_cast<std::uint8_t *>(frame.buffer->data());
+    input.size = static_cast<std::uint32_t>(frame.buffer->size());
     input.timestamp_ns = frame.timestampNs;
-    input.priv = frame.opaque;
+    input.priv = nullptr;
     codec_buffer_t output{};
     output.fd = -1;
     output.data = output_.data();
@@ -207,9 +218,16 @@ public:
     const int rc = device_->ops->encode(device_, &input, &output, 0);
     if (rc != 0)
       return rc;
-    packet = EncodedPacketView{
-        output_.data(), output.size, output.timestamp_ns, config_.codec,
-        (output.flags & CODEC_BUFFER_FLAG_KEYFRAME) != 0};
+    auto buffer = copyMediaBuffer(output_.data(), output.size);
+    if (buffer == nullptr)
+      return -ENOMEM;
+    try {
+      packet = std::make_shared<const VideoPacket>(
+          VideoPacket{std::move(buffer), output.timestamp_ns, config_.codec,
+                      (output.flags & CODEC_BUFFER_FLAG_KEYFRAME) != 0});
+    } catch (...) {
+      return -ENOMEM;
+    }
     return 0;
   }
 
@@ -234,16 +252,18 @@ public:
     audio_close(device_);
   }
 
-  int start(AudioFrameCallback callback) override {
+  int start(FrameHandler handler, ErrorHandler errorHandler) override {
     const std::lock_guard<std::mutex> lock(mutex_);
     if (started_)
       return -EALREADY;
-    if (!callback)
+    if (!handler)
       return -EINVAL;
-    callback_ = std::move(callback);
+    handler_ = std::move(handler);
+    errorHandler_ = std::move(errorHandler);
     int rc = device_->ops->start(device_, AUDIO_DIRECTION_INPUT);
     if (rc != 0) {
-      callback_ = {};
+      handler_ = {};
+      errorHandler_ = {};
       return rc;
     }
     started_ = true;
@@ -254,7 +274,8 @@ public:
       running_.store(false);
       started_ = false;
       device_->ops->stop(device_, AUDIO_DIRECTION_INPUT);
-      callback_ = {};
+      handler_ = {};
+      errorHandler_ = {};
       return -EAGAIN;
     }
     return 0;
@@ -269,7 +290,8 @@ public:
       thread_.join();
     const int rc = device_->ops->stop(device_, AUDIO_DIRECTION_INPUT);
     pending_.clear();
-    callback_ = {};
+    handler_ = {};
+    errorHandler_ = {};
     started_ = false;
     return rc;
   }
@@ -293,11 +315,19 @@ private:
       if (rc == -EAGAIN || rc == -ETIMEDOUT)
         continue;
       if (rc == -ENOSPC && buffer.size > readBuffer_.size()) {
-        readBuffer_.resize(buffer.size);
+        try {
+          readBuffer_.resize(buffer.size);
+        } catch (...) {
+          if (errorHandler_)
+            errorHandler_(-ENOMEM, "grow audio read buffer failed");
+          running_.store(false);
+        }
         continue;
       }
       if (rc != 0) {
         SVC_LOGE(kTag, "audio capture failed: %d", rc);
+        if (errorHandler_)
+          errorHandler_(rc, "audio capture failed");
         running_.store(false);
         break;
       }
@@ -306,24 +336,43 @@ private:
       if (buffer.size > readBuffer_.size()) {
         SVC_LOGE(kTag, "audio HAL returned an oversized buffer: %u",
                  buffer.size);
+        if (errorHandler_)
+          errorHandler_(-EOVERFLOW, "audio HAL returned an oversized buffer");
         running_.store(false);
         break;
       }
       if (pending_.empty())
         pendingTimestampNs_ = buffer.timestamp_ns;
-      pending_.insert(pending_.end(), readBuffer_.begin(),
-                      readBuffer_.begin() + buffer.size);
+      try {
+        pending_.insert(pending_.end(), readBuffer_.begin(),
+                        readBuffer_.begin() + buffer.size);
+      } catch (...) {
+        if (errorHandler_)
+          errorHandler_(-ENOMEM, "grow audio reblock buffer failed");
+        running_.store(false);
+        break;
+      }
       while (pending_.size() >= callbackBytes && running_.load()) {
-        const AudioFrameView frame{
-            pending_.data(),     callbackBytes,        pendingTimestampNs_,
-            format_.sampleRate,  format_.channelCount, format_.framesPerBuffer,
-            format_.sampleFormat};
         try {
-          callback_(frame);
+          auto mediaBuffer = copyMediaBuffer(pending_.data(), callbackBytes);
+          if (mediaBuffer == nullptr) {
+            if (errorHandler_)
+              errorHandler_(-ENOMEM, "copy audio frame failed");
+            running_.store(false);
+            break;
+          }
+          handler_(std::make_shared<const AudioFrame>(
+              AudioFrame{std::move(mediaBuffer), pendingTimestampNs_,
+                         format_.sampleRate, format_.channelCount,
+                         format_.framesPerBuffer, format_.sampleFormat}));
         } catch (const std::exception &exception) {
           SVC_LOGE(kTag, "audio source callback threw: %s", exception.what());
+          if (errorHandler_)
+            errorHandler_(-EFAULT, "audio frame handler threw");
         } catch (...) {
           SVC_LOGE(kTag, "audio source callback threw an unknown exception");
+          if (errorHandler_)
+            errorHandler_(-EFAULT, "audio frame handler threw");
         }
         pending_.erase(pending_.begin(), pending_.begin() + callbackBytes);
         pendingTimestampNs_ +=
@@ -335,7 +384,8 @@ private:
 
   audio_device_t *device_;
   AudioCaptureConfig format_;
-  AudioFrameCallback callback_;
+  FrameHandler handler_;
+  ErrorHandler errorHandler_;
   std::vector<std::uint8_t> readBuffer_;
   std::vector<std::uint8_t> pending_;
   std::uint64_t pendingTimestampNs_{0};

@@ -1,105 +1,85 @@
 # SvcKit Media
 
-SvcKit Media 是 Application 与协议层使用的媒体门面。它负责媒体生命周期、
-Camera/Codec 组合、缓冲、线程调度和帧分发，但不直接包含任何 SoC SDK 调用。
-
-依赖方向固定为：
-
-```text
-Application / Protocol
-          ↓
-     SvcKit Media node graph
-          ↓
-Platform Camera / Codec / Audio SPI
-          ↓
-host_x86 或 vendors/<vendor>/socs/<soc>
-```
-
-当前落地的第一条竖向能力是 `createMediaPipeline()`：通过 Camera/Codec SPI 创建
-一路采集编码视频，并可通过 Audio SPI 同步启动一路麦克风 PCM 采集。视频以
-`EncodedPacketView`、音频以 `AudioFrameView` 回调交付。未来录像、RTSP、
-GB28181 和分析服务应消费该门面，而不是直接持有 Platform HAL device。
-
-`MediaPipeline` 是便捷门面，不是所有功能的实现容器。实际运行链路由节点组成：
+SvcKit Media 是 Application 与协议层使用的媒体门面，负责节点编排、数据所有权、
+异步队列、背压、Fanout、状态事件与统计。它只依赖 Platform 公共 SPI，不包含 SoC
+SDK 调用。
 
 ```text
-PlatformVideoSource → PlatformVideoEncoder → PacketCallback / VideoPacketSink
-PlatformAudioSource ───────────────────────→ AudioFrameCallback / AudioEncoder
+Application / Protocol / Recorder / RTSP
+                   ↓
+        SvcKit Media Pipeline + Sink
+                   ↓
+      Platform Camera / Codec / Audio SPI
+                   ↓
+        host_x86 或 vendors/<vendor>/socs/<soc>
 ```
 
-Source 负责产生数据，Codec 负责格式转换，Filter 负责处理，Sink/Muxer 负责消费，
-Pipeline 只管理节点启动顺序、停止顺序和失败回滚。所有公共接口统一位于
-`darkos::media` 命名空间。
-
-编解码接口按媒体类型对称组织：
+## 已落地的数据流
 
 ```text
-media_video_codec.h → VideoEncoder + VideoDecoder
-media_audio_codec.h → AudioEncoder + AudioDecoder
+VideoSource → bounded queue → VideoEncoder → Fanout → VideoPacketSink*
+AudioSource → bounded queue → AudioEncoder → Fanout → AudioPacketSink*
 ```
 
-## 节点状态
+- Source 回调只创建有所有权的不可变 `MediaBuffer` 并非阻塞入队，不执行应用代码；
+- 音视频各有独立编码线程，音频编码器是 Pipeline 内部节点；
+- 每个 Sink 有独立有界队列和消费线程，慢消费者按配置丢最旧或最新包；
+- 同一个 `shared_ptr<const MediaBuffer>` 可安全交给 RTSP、录像和分析等多个消费者；
+- 所有时间戳统一为 `CLOCK_MONOTONIC` 纳秒；
+- 生命周期使用 `PipelineState`，错误和丢帧通过 `waitEvent()` 拉取，避免回调重入；
+- `stats()` 提供采集、编码、丢帧和错误计数。
 
-| 节点 | 当前状态 |
-| --- | --- |
-| `VideoSource` | 已实现 Platform Camera 适配，支持 host 合成/UVC 和 RV1126B |
-| `AudioSource` | 已实现 Platform Audio Input 适配、动态扩容和固定帧分块 |
-| `VideoEncoder` | 已实现 Platform Codec 适配，host x264 / RV1126B VENC |
-| `AudioEncoder/Decoder` | 已实现 PCM、G.711A、G.711U；AAC/Opus 明确返回未支持 |
-| `VideoDecoder` | 接口已稳定，Platform decode 适配尚未接入管线 |
-| `VideoFilter/AudioFilter` | 接口已稳定，具体 OSD/AEC/重采样实现按能力加入 |
-| `VideoSink/AudioSink` | 已区分原始帧 Sink 与编码包 Sink，具体协议/显示节点待接 |
-| `MediaMuxer` | 已定义音视频时间戳写入契约，MP4/TS 实现待接 |
-| `MediaManager` | 已实现无全局单例的管线创建门面，后续承载多路资源仲裁 |
-
-## 边界
-
-SvcKit Media 负责：
-
-- 主辅码流、抓拍等产品级管线；
-- Camera、Codec、Display 的组合与启动/停止顺序；
-- buffer 生命周期、背压、分发与统计；
-- 软件回退和 Platform 可选硬件加速能力的选择。
-
-Platform/SoC 适配层负责：
-
-- V4L2、Rockit、RKAIQ、MPI 等硬件机制；
-- dma-buf/厂商 buffer 与统一 SPI 之间的转换；
-- VI/VENC 等资源创建、销毁以及硬件直连。
-
-禁止 SvcKit 和协议层出现 `RK_MPI_*`、`MB_BLK`、Rockchip 通道号等厂商类型。
-
-## 当前 API
-
-```cpp
-#include <media_pipeline.h>
-
-darkos::media::VideoPipelineConfig config;
-std::string error;
-auto pipeline = darkos::media::createMediaPipeline(
-    config,
-    [](const darkos::media::EncodedPacketView &packet) {
-        // packet.data 仅在本次回调期间有效；异步消费时必须复制或转入 BufferPool。
-    },
-    error);
-```
-
-音视频管线使用 `MediaPipelineConfig` 和两个回调：
+## API 示例
 
 ```cpp
 darkos::media::MediaPipelineConfig config;
-auto pipeline = darkos::media::createMediaPipeline(
-    config,
-    [](const darkos::media::EncodedPacketView &packet) {
-        // H.264/H.265/MJPEG 编码视频。
-    },
-    [](const darkos::media::AudioFrameView &frame) {
-        // 当前为 S16LE PCM；可交给内置 G.711A/G.711U 编码节点。
-    },
-    error);
+config.video.encoder.codec = darkos::media::VideoCodec::H264;
+config.audio.encoder.codec = darkos::media::AudioCodec::G711A;
+
+std::string error;
+auto pipeline = darkos::media::createMediaPipeline(config, error);
+
+auto videoSink = darkos::media::createVideoProbeSink();
+auto audioSink = darkos::media::createAudioProbeSink();
+
+darkos::media::SinkId videoId = 0;
+darkos::media::SinkId audioId = 0;
+darkos::media::MediaQueueConfig queue{
+    8, darkos::media::BackpressurePolicy::DropOldest};
+pipeline->addVideoSink(videoSink, queue, videoId);
+pipeline->addAudioSink(audioSink, queue, audioId);
+pipeline->start();
+videoSink->waitForPackets(10, 5'000);
+audioSink->waitForPackets(10, 5'000);
 ```
 
-不允许通过返回成功的空实现冒充未落地能力。工厂无法提供 AAC、Opus、MP4 等节点
-时必须明确失败；调用方可以据此选择软件插件、降级格式或拒绝启动。
+Probe Sink 是无回调的自检节点，通过 `waitForPackets()` 等待，通过 `snapshot()`
+读取统计。正式的 RTSP、Recorder、Display 等组件应实现对应 Sink 接口；它们的
+`consume()` 由 Pipeline 的 Sink 工作线程调用，而不是 Camera、Audio 或 Encoder
+线程。
 
-更完整的分层和演进约束见 `docs/Platform与SvcKit媒体分层设计.md`。
+## 公共节点
+
+| 节点 | 状态 |
+| --- | --- |
+| `VideoSource` | Platform Camera 适配，支持 host 合成/UVC 和 RV1126B |
+| `AudioSource` | Platform Audio Input 适配、动态扩容和固定帧分块 |
+| `VideoEncoder` | Platform Codec 适配，host x264 / RV1126B VENC |
+| `AudioEncoder/Decoder` | PCM、G.711A、G.711U；AAC/Opus 明确返回未支持 |
+| `VideoDecoder` | 接口已定义，Platform decode 适配待接 |
+| `VideoFilter/AudioFilter` | 接口已定义，OSD/AEC/重采样实现按能力加入 |
+| `VideoSink/AudioSink` | 原始帧和编码包 Sink 分离；已提供无回调 Probe Sink |
+| `MediaMuxer` | 已定义音视频写入契约，MP4/TS 实现待接 |
+| `MediaManager` | 无全局单例的管线创建门面；后续承载资源仲裁 |
+
+编解码接口按媒体类型对称组织：`media_video_codec.h` 同时定义 VideoEncoder 和
+VideoDecoder，`media_audio_codec.h` 同时定义 AudioEncoder 和 AudioDecoder。
+
+## 分层边界
+
+SvcKit Media 负责产品级管线、生命周期、队列、背压、分发与统计。Platform/SoC
+适配层负责 V4L2、RKAIQ、MPI、dma-buf、VI/VENC 资源以及未来的通用硬件直连。
+SvcKit、Application 和协议层禁止出现 `RK_MPI_*`、`MB_BLK` 或 Rockchip 通道号。
+
+无法提供 AAC、Opus、MP4 等能力时，工厂必须明确失败，不能返回成功的空实现。
+更完整的分层约束见 `docs/Platform与SvcKit媒体分层设计.md`。
