@@ -28,7 +28,8 @@
     {
       "name": "rv1126b_ipc",
       "displayName": "Build rv1126b_ipc Release",
-      "configurePreset": "rv1126b_ipc"
+      "configurePreset": "rv1126b_ipc",
+      "jobs": 0
     }
   ]
 }

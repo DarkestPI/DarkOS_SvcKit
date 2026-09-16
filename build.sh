@@ -50,11 +50,11 @@ cmd_ide() {
 
 cmd_host() {
     configure_host
-    cmake --build "$ROOT_BUILD" --target svckit_host_tests "$@"
+    cmake --build "$ROOT_BUILD" --parallel --target svckit_host_tests "$@"
 }
 
 cmd_test() {
-    cmake --build "$ROOT_BUILD" --target svckit_host_tests >/dev/null
+    cmake --build "$ROOT_BUILD" --parallel --target svckit_host_tests >/dev/null
     ctest --test-dir "$ROOT_BUILD" --output-on-failure "$@"
 }
 
@@ -64,7 +64,7 @@ cmd_app() {
         echo "用法：./build.sh app <name>（applications 目录下的应用名）" >&2
         exit 1
     fi
-    (cd "$ROOT/applications/$name" && cmake --preset "$name" && cmake --build --preset "$name")
+    (cd "$ROOT/applications/$name" && cmake --preset "$name" && cmake --build --preset "$name" --parallel)
 }
 
 # 删除单个应用的构建目录。只认含 CMakeCache.txt/CMakeFiles 的目录，避免误删

@@ -27,7 +27,8 @@
     {
       "name": "generic_ipc",
       "displayName": "Build generic_ipc Ubuntu x86_64 Release",
-      "configurePreset": "generic_ipc"
+      "configurePreset": "generic_ipc",
+      "jobs": 0
     }
   ]
 }

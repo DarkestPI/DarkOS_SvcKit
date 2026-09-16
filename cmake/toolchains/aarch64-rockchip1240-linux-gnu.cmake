@@ -75,8 +75,8 @@ set(RV1126B_ARCH_FLAGS
 # 工具链文件可能被 CMake/try_compile 多次载入，因此这里使用确定值初始化，
 # 不引用旧值做字符串追加，避免架构参数重复。CACHE 不使用 FORCE：调用者
 # 显式传入 -DCMAKE_<LANG>_FLAGS_<CONFIG> 时仍然拥有更高优先级。
-# 链接 rockchip 预编译媒体库时可能出 LTO 插件错误。
-# 如果实际 HAL 链接失败，可通过命令行覆盖 Release flags 去掉 -flto。
+# LTO 由 DarkOS.cmake 的 DARKOS_ENABLE_LTO 统一控制；日常构建默认关闭，
+# 避免拖慢链接以及触发 Rockchip 预编译媒体库的 LTO 插件兼容问题。
 # ------------------------------------------------------------
 set(DARKOS_COMMON_COMPILE_FLAGS
     "-ffunction-sections -fdata-sections ${RV1126B_ARCH_FLAGS}")
@@ -93,11 +93,21 @@ set(CMAKE_CXX_FLAGS_DEBUG
     CACHE STRING "C++ flags for Debug")
 
 set(CMAKE_C_FLAGS_RELEASE
-    "-O2 -DNDEBUG -flto"
+    "-O2 -DNDEBUG"
     CACHE STRING "C flags for Release")
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-O2 -DNDEBUG -flto"
+    "-O2 -DNDEBUG"
     CACHE STRING "C++ flags for Release")
+
+# 迁移由旧版工具链生成的缓存，同时保留调用者自定义的 Release flags。
+if(CMAKE_C_FLAGS_RELEASE STREQUAL "-O2 -DNDEBUG -flto")
+    set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING
+        "C flags for Release" FORCE)
+endif()
+if(CMAKE_CXX_FLAGS_RELEASE STREQUAL "-O2 -DNDEBUG -flto")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING
+        "C++ flags for Release" FORCE)
+endif()
 
 set(CMAKE_C_FLAGS_RELWITHDEBINFO
     "-O2 -g -DNDEBUG"

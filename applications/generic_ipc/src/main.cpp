@@ -87,9 +87,11 @@ bool loadRequiredHalModules() {
 
 int main(int argc, char **argv) {
 
+    // 1. 设置日志
     svc_log_set_default_level(SVC_LOG_VERBOSE);
     SVC_LOGI(kTag, "application started");
 
+    // 2. 解析命令行参数
     Options options(defaultConfigDirectory());
     if (!parseOptions(argc, argv, options))
         return EXIT_FAILURE;
@@ -97,6 +99,7 @@ int main(int argc, char **argv) {
     darkos::BoardConfig board;
     darkos::AppConfig app;
     std::string error;
+    
     if (!darkos::BoardConfig::load(options.boardConfig, board, error)) {
         SVC_LOGE(kTag, "board configuration error: %s", error.c_str());
         return EXIT_FAILURE;
@@ -110,8 +113,11 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    SVC_LOGI(kTag, "board=%s soc=%s serial_ports=%zu", board.boardId().c_str(), board.compatibleSoc().c_str(),
-             board.serialPorts().size());
+    SVC_LOGI(kTag, "board=%s soc=%s serial_ports=%zu", 
+            board.boardId().c_str(), 
+            board.compatibleSoc().c_str(),
+            board.serialPorts().size());
+
     for (const auto &entry : app.serialBindings()) {
         const darkos::SerialBinding &binding = entry.second;
         const darkos::BoardSerialPort *port = board.findSerialPort(binding.resource);
@@ -119,6 +125,7 @@ int main(int argc, char **argv) {
                  port->device.c_str(), darkos::serialElectricalName(port->electrical), binding.baud);
     }
 
+    // 3. 加载 HAL 模块
     if (!loadRequiredHalModules())
         return EXIT_FAILURE;
 

@@ -24,7 +24,8 @@
     "**/*.o": true,
     "**/*.a": true,
     "**/*.so": true,
-    "**/*.d": true
+    "**/*.d": true,
+    ".github": true
   },
   // 在 VSCode 搜索中排除这些文件/目录。
   "search.exclude": {

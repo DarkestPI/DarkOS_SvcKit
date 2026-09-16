@@ -17,6 +17,20 @@ option(DARKOS_BUILD_HAL_IMPLEMENTATIONS "Build the selected platform HAL impleme
 option(DARKOS_BUILD_PROTOCOL_IMPLEMENTATIONS "Build protocol implementations instead of skeleton targets" OFF)
 option(DARKOS_BUILD_SECURITY_COMPONENTS "Build SvcKit crypto and keystore components" OFF)
 option(DARKOS_ENABLE_OUTPUT_LAYOUT "Use the DarkOS bin/lib/etc output layout" ON)
+option(DARKOS_ENABLE_LTO "Enable link-time optimization for Release builds" OFF)
+
+# LTO 对日常交叉编译和链接影响明显，因此默认关闭，只在发布构建显式启用。
+# 使用 CMake 的 IPO 属性而不是手写 -flto，以便由具体编译器选择正确参数。
+if(DARKOS_ENABLE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT darkos_lto_supported OUTPUT darkos_lto_error
+        LANGUAGES C CXX)
+    if(NOT darkos_lto_supported)
+        message(FATAL_ERROR "DARKOS_ENABLE_LTO is ON, but IPO is unavailable: ${darkos_lto_error}")
+    endif()
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+    message(STATUS "DarkOS Release LTO: enabled")
+endif()
 
 # 必须在调用方的顶层目录启用 CTest，否则子目录中的 add_test() 虽然能生成
 # 测试程序，但从 Application 构建目录执行 ctest 时无法发现测试。
