@@ -118,6 +118,7 @@ preset 配置并构建 `applications/<name>`、`clean [<name>]` 删除应用构�
 
 # 目录结构
 
+```bash
 SvcKit/
 ├── CMakeLists.txt              # 根CMake文件
 ├── README.md
@@ -152,3 +153,4 @@ SvcKit/
 │   └── integration/           # 集成测试
 ├── scripts/                   # 实用脚本
 └── build/                     # 构建输出目录 (git忽略)
+```

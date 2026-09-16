@@ -72,7 +72,7 @@ cmd_app() {
 clean_one() {
     local app="$1"
     local dir="$ROOT/applications/$app/build"
-
+    local cacheDir="$ROOT/applications/$app/.cache"
     if [ ! -d "$dir" ]; then
         echo "跳过 $app：无 build 目录"
         return 0
@@ -82,6 +82,7 @@ clean_one() {
         return 0
     fi
     rm -rf "$dir"
+    rm -rf "$cacheDir"
     echo "已清理 $app/build"
     if [ "$app" = "rv1126b_ipc" ]; then
         echo "提示：rv1126b 厂商跳转库已悬空，重建应用（./build.sh app rv1126b_ipc）后自动恢复"
