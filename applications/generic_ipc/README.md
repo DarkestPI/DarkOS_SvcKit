@@ -43,13 +43,24 @@ output/generic_ipc/
 默认拉流地址：
 
 ```bash
-ffplay -rtsp_transport tcp rtsp://127.0.0.1:8554/live
+ffplay -rtsp_transport tcp \
+  'rtsp://admin:DarkOS%40123@127.0.0.1:8554/live'
 ```
+
+VLC 默认会预缓存约 1 秒网络数据。联调时可使用 TCP 并把网络缓存降到 200 ms：
+
+```bash
+vlc --rtsp-tcp --network-caching=200 rtsp://127.0.0.1:8554/live
+```
+
+Windows 图形界面也可以在“工具 → 偏好设置 → 输入/编解码器 → 网络缓存”中改为
+`200 ms`。缓存越低，启动和画面延迟越小，但网络抖动较大时更容易卡顿。
 
 也可以验证 UDP 单播：
 
 ```bash
-ffplay -rtsp_transport udp rtsp://127.0.0.1:8554/live
+ffplay -rtsp_transport udp \
+  'rtsp://admin:DarkOS%40123@127.0.0.1:8554/live'
 ```
 
 按 `Ctrl+C` 停止服务。录像默认写入 `output/generic_ipc/data/recordings/`，报警日志
@@ -77,7 +88,8 @@ RTSP 参数统一放在 `applications/generic_ipc/etc/app.json`：
     "maximum_rtp_payload_bytes": 1200,
     "maximum_client_backlog_bytes": 2097152,
     "authentication": {
-      "username": "",
+      "username": "admin",
+      "password": "DarkOS@123",
       "password_env": "DARKOS_RTSP_PASSWORD"
     },
     "multicast": {
@@ -101,32 +113,34 @@ RTSP 参数统一放在 `applications/generic_ipc/etc/app.json`：
 | `session_timeout_seconds` | 无活动会话的回收时间 |
 | `rtcp_report_interval_ms` | RTCP Sender Report 周期 |
 | `authentication.username` | Digest 用户名；空字符串表示关闭鉴权 |
-| `authentication.password_env` | 保存密码的环境变量名，密码不写入 JSON |
+| `authentication.password` | 固定密码；为空时才读取密码环境变量 |
+| `authentication.password_env` | 固定密码为空时读取的环境变量名 |
 | `multicast.enabled` | 是否允许客户端通过 UDP 组播接收 |
 | `multicast.video_port` | 视频 RTP 端口；对应 RTCP 端口为该值加 1 |
 | `multicast.audio_port` | 音频 RTP 端口；对应 RTCP 端口为该值加 1 |
 
 ### 开启鉴权
 
-把 `authentication.username` 改为 `admin`，重新构建，然后通过配置指定的环境变量
-注入密码：
+默认开发配置使用固定凭据 `admin / DarkOS@123`：
 
 ```bash
-DARKOS_RTSP_PASSWORD='change-me' \
-  ./output/generic_ipc/bin/generic_ipc --serve
+./output/generic_ipc/bin/generic_ipc --serve
 
 ffplay -rtsp_transport tcp \
-  'rtsp://admin:change-me@127.0.0.1:8554/live'
+  'rtsp://admin:DarkOS%40123@127.0.0.1:8554/live'
 ```
 
-用户名非空但密码环境变量未设置时，应用会拒绝启动，避免意外开放无鉴权服务。
+URL 中的 `@` 需要编码为 `%40`。如需关闭鉴权，把 `authentication.username` 改为
+空字符串并重新构建。量产部署建议清空 `password`，通过 `password_env` 指定的环境变量
+注入设备独立密码。
 
 ### 开启组播
 
 把 `multicast.enabled` 改为 `true`，重新构建并启动，然后执行：
 
 ```bash
-ffplay -rtsp_transport udp_multicast rtsp://127.0.0.1:8554/live
+ffplay -rtsp_transport udp_multicast \
+  'rtsp://admin:DarkOS%40123@127.0.0.1:8554/live'
 ```
 
 默认视频使用 `239.255.0.1:5004/5005`，音频使用

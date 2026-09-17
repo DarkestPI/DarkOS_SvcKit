@@ -110,11 +110,14 @@ function(darkos_add_application target)
         ARCHIVE DESTINATION lib)
 
     if(DARKOS_ENABLE_OUTPUT_LAYOUT AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/etc")
-        add_custom_command(TARGET "${target}" POST_BUILD
+        # 配置文件不是编译输入；使用独立的 ALL 目标，保证只修改 JSON 后执行
+        # 普通 build 也会同步配置，而不依赖可执行文件恰好发生重新链接。
+        add_custom_target("${target}_stage_config" ALL
             COMMAND "${CMAKE_COMMAND}" -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/etc"
                 "${DARKOS_OUTPUT_ROOT}/etc"
             COMMENT "Staging ${target} configuration")
+        add_dependencies("${target}" "${target}_stage_config")
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/etc")

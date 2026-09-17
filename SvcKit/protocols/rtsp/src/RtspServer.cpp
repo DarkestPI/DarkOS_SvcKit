@@ -784,9 +784,16 @@ bool Connection::authorized(const Request &request) {
   const std::string qop = lower(get("qop"));
   const std::string nc = get("nc");
   const std::string cnonce = get("cnonce");
+  // live555 signs SETUP with the presentation URL even though the request
+  // target is the individual track URL. Its presentation URL can also retain
+  // the trailing slash from Content-Base. Compare normalized presentation
+  // URLs for SETUP, but keep exact URI matching for every other method.
+  const bool uriMatches =
+      uri == request.url ||
+      (request.method == "SETUP" && baseUrl(uri) == baseUrl(request.url));
   bool valid = username == options.username &&
                realm == options.authenticationRealm &&
-               nonce == nonce_ && uri == request.url &&
+               nonce == nonce_ && uriMatches &&
                !response.empty();
   std::string expected;
   std::uint32_t nonceCount = 0;

@@ -207,17 +207,20 @@ bool parseRtsp(const cJSON *object, RtspAppConfig &config,
       cJSON_GetObjectItemCaseSensitive(object, "authentication");
   if (authentication != nullptr) {
     if (!cJSON_IsObject(authentication) ||
-        !checkMembers(authentication, {"username", "password_env"},
+        !checkMembers(authentication, {"username", "password", "password_env"},
                       "rtsp authentication", error) ||
         !readOptionalString(authentication, "username",
                             config.authentication.username, error) ||
+        !readOptionalString(authentication, "password",
+                            config.authentication.password, error) ||
         !readOptionalString(authentication, "password_env",
                             config.authentication.passwordEnvironment, error))
       return false;
   }
   if (!config.authentication.username.empty() &&
+      config.authentication.password.empty() &&
       !validEnvironmentName(config.authentication.passwordEnvironment)) {
-    error = "rtsp authentication requires a valid 'password_env'";
+    error = "rtsp authentication requires 'password' or a valid 'password_env'";
     return false;
   }
 

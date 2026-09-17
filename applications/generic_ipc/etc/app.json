@@ -20,7 +20,8 @@
     "maximum_rtp_payload_bytes": 1200,
     "maximum_client_backlog_bytes": 2097152,
     "authentication": {
-      "username": "",
+      "username": "admin",
+      "password": "DarkOS@123",
       "password_env": "DARKOS_RTSP_PASSWORD"
     },
     "multicast": {

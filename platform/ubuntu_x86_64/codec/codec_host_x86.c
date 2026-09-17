@@ -3,7 +3,7 @@
  *
  * - CODEC_ID_RAW ：透传伪编码（输入原样拷贝），验证管道语义；
  * - CODEC_ID_H264：经 x264（third_party）软编，供 RTSP 出流联调。
- *   参数预设 veryfast + zerolatency（无 B 帧、逐帧出包，贴合直播场景），
+ *   参数预设 ultrafast + zerolatency（无 B 帧、逐帧出包，贴合直播联调），
  *   输出 Annex-B 裸流且 SPS/PPS 内嵌（RTP 打包可直接解析）。
  *
  * 用途：在宿主机上联调 frameworks/packages，不依赖 MPP。
@@ -80,13 +80,15 @@ static int host_codec_start(codec_device_t *dev) {
 
     if (priv->fmt.codec == CODEC_ID_H264) {
         x264_param_t param;
-        x264_param_default_preset(&param, "veryfast", "zerolatency");
+        x264_param_default_preset(&param, "ultrafast", "zerolatency");
         param.i_width = (int)priv->fmt.width;
         param.i_height = (int)priv->fmt.height;
         param.i_csp = X264_CSP_NV12;
         param.i_fps_num = priv->fmt.fps ? priv->fmt.fps : 30;
         param.i_fps_den = 1;
         param.i_keyint_max = (int)(priv->fmt.gop ? priv->fmt.gop : 30);
+        param.i_keyint_min = param.i_keyint_max;
+        param.i_scenecut_threshold = 0;
         param.rc.i_bitrate =
             (int)(priv->fmt.bitrate_bps ? priv->fmt.bitrate_bps / 1000 : 2000);
         param.b_annexb = 1;        /* Annex-B 裸流 */

@@ -85,6 +85,7 @@ void testValidConfiguration(const TemporaryDirectory &temporary) {
         "maximum_client_backlog_bytes": 1048576,
         "authentication": {
           "username": "admin",
+          "password": "test-password",
           "password_env": "TEST_RTSP_PASSWORD"
         },
         "multicast": {
@@ -125,6 +126,7 @@ void testValidConfiguration(const TemporaryDirectory &temporary) {
   CHECK(app.rtsp().maximumRtpPayloadBytes == 1000);
   CHECK(app.rtsp().maximumClientBacklogBytes == 1048576);
   CHECK(app.rtsp().authentication.username == "admin");
+  CHECK(app.rtsp().authentication.password == "test-password");
   CHECK(app.rtsp().authentication.passwordEnvironment ==
         "TEST_RTSP_PASSWORD");
   CHECK(app.rtsp().multicast.enabled);

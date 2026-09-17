@@ -133,6 +133,8 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
         if (!rtspOptions.username.empty()) {
             if (options.rtspPasswordOverride) {
                 rtspOptions.password = *options.rtspPasswordOverride;
+            } else if (!configuredRtsp.authentication.password.empty()) {
+                rtspOptions.password = configuredRtsp.authentication.password;
             } else {
                 const char *password = std::getenv(configuredRtsp.authentication.passwordEnvironment.c_str());
                 if (password == nullptr || password[0] == '\0') {

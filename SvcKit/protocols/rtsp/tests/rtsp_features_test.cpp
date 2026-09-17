@@ -200,7 +200,9 @@ int main() {
   const std::string videoUrl = url + "/trackID=0";
   valid = valid && sendAll(fd, "SETUP " + videoUrl +
                                    " RTSP/1.0\r\nCSeq: 3\r\n" +
-                                   digestHeader("SETUP", videoUrl, nonce) +
+                                   // live555 signs SETUP using the presentation
+                                   // URL rather than the track request target.
+                                   digestHeader("SETUP", url + "/", nonce) +
                                    "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n\r\n");
   value = response(fd);
   const std::string session = sessionOf(value);
@@ -209,7 +211,7 @@ int main() {
   const std::string audioUrl = url + "/trackID=1";
   valid = valid && sendAll(fd, "SETUP " + audioUrl +
                                    " RTSP/1.0\r\nCSeq: 4\r\n" +
-                                   digestHeader("SETUP", audioUrl, nonce) +
+                                   digestHeader("SETUP", url + "/", nonce) +
                                    "Session: " + session + "\r\n"
                                    "Transport: RTP/AVP/TCP;unicast;interleaved=2-3\r\n\r\n");
   value = response(fd);

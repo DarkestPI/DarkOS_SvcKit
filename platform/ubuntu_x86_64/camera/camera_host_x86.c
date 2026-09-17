@@ -10,7 +10,7 @@
  * 环境变量 DARKOS_CAMERA_DEVICE 指定 V4L2 设备节点（如 /dev/video0）时，
  * open 可分流到 shared/linux/camera 的 V4L2 后端，采集真实摄像头画面。
  *
- * 当前仅生成 NV12 测试图案（水平渐变 + 随帧号移动），
+ * 当前仅生成 NV12 测试图案（静态灰阶测试卡 + 平滑移动方块），
  * 后续可按需扩展 YUYV / RGB24 等。
  */
 
@@ -105,10 +105,28 @@ static void fill_test_pattern(host_camera_priv_t *priv, camera_frame_t *frame) {
     uint8_t *p = priv->buf;
     uint32_t x, y;
 
-    /* Y 平面：水平渐变，随帧号移动（可见的"动起来"效果） */
-    for (y = 0; y < h; y++)
-        for (x = 0; x < w; x++)
-            p[y * w + x] = (uint8_t)((x + priv->seq * 8) & 0xff);
+    /* Y 平面：背景保持稳定，只移动局部方块，便于观察帧率且利于帧间编码。 */
+    for (x = 0; x < w; x++)
+        p[x] = (uint8_t)(32u + (x * 160u) / w);
+    for (y = 1; y < h; y++)
+        memcpy(p + (size_t)y * w, p, w);
+
+    {
+        const uint32_t box_width = w / 10u > 16u ? w / 10u : 16u;
+        const uint32_t box_height = h / 6u > 16u ? h / 6u : 16u;
+        const uint32_t travel_x = w > box_width ? w - box_width : 0u;
+        const uint32_t travel_y = h > box_height ? h - box_height : 0u;
+        const uint32_t cycle_x = travel_x > 0u ? travel_x * 2u : 1u;
+        const uint32_t cycle_y = travel_y > 0u ? travel_y * 2u : 1u;
+        uint32_t box_x = (priv->seq * 4u) % cycle_x;
+        uint32_t box_y = (priv->seq * 2u) % cycle_y;
+        if (box_x > travel_x)
+            box_x = cycle_x - box_x;
+        if (box_y > travel_y)
+            box_y = cycle_y - box_y;
+        for (y = box_y; y < box_y + box_height; y++)
+            memset(p + (size_t)y * w + box_x, 235, box_width);
+    }
 
     /* UV 平面：中性色（灰） */
     memset(p + ysize, 128, uvsize);

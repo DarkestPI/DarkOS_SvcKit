@@ -17,6 +17,7 @@ struct SerialBinding {
 
 struct RtspAuthenticationConfig {
   std::string username;
+  std::string password;
   std::string passwordEnvironment{"DARKOS_RTSP_PASSWORD"};
 };
 
