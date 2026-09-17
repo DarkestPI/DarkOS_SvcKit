@@ -69,7 +69,6 @@ cmake -S . -B build \
   `rockchip`、`rv1126b`；RV1126B 工具链可以自动识别；
 - `DARKOS_BUILD_SECURITY_COMPONENTS`：构建 `svc_crypto` 和 `svc_keystore`，
   默认 `OFF`；启用后需要 OpenSSL `libcrypto`；
-- `DARKOS_BUILD_PROTOCOL_IMPLEMENTATIONS`：构建协议实现，默认 `OFF`。
 
 需要显式选择平台时，例如：
 
@@ -86,7 +85,8 @@ cmake -S . -B build \
 
 骨架阶段缺少源码的组件使用 `INTERFACE` 目标占位。应用统一链接
 `DarkOS::SvcKit`，也可以按需链接 `DarkOS::Media`、`DarkOS::Networking`、
-`DarkOS::RTSP` 等细粒度目标。
+`DarkOS::Media`、`DarkOS::Networking`、`DarkOS::Peripheral`、
+`DarkOS::Storage`、`DarkOS::Alarm` 等细粒度目标。
 
 ## IDE 跳转（clangd）
 

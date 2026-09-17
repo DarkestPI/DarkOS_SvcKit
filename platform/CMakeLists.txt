@@ -9,6 +9,7 @@ set(DARKOS_SUPPORTED_VENDORS
     gokemicro
     ingenic
     novatek
+    visinextek
     sunplus)
 
 # Reference Platform 用于宿主机模拟；真实芯片使用 Vendor + SoC 两级选择。

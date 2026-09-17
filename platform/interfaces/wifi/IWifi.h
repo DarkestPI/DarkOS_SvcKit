@@ -30,8 +30,8 @@ typedef struct wifi_device_ops {
     int (*get_capabilities)(wifi_device_t *dev, wifi_caps_t *caps);
     /* 打开WIFI */
     int (*wifi_enable)(wifi_device_t *dev);
-    /* 获取当前连接信息 */
-    int (*wifi_get_status)(wifi_device_t *dev);
+    /* ABI 保留别名；新代码统一使用末尾的 get_status。 */
+    int (*wifi_get_status)(wifi_device_t *dev, wifi_status_t *status);
     /* 关闭WIFI */
     int (*wifi_disable)(wifi_device_t *dev);
     /* 扫描 */

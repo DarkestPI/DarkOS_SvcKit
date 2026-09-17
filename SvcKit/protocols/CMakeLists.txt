@@ -1,0 +1,10 @@
+add_subdirectory(common)
+add_subdirectory(rtsp)
+add_subdirectory(onvif)
+add_subdirectory(gb28181)
+add_subdirectory(rtmp)
+add_subdirectory(uart)
+add_subdirectory(web)
+
+add_library(darkos_protocols INTERFACE)
+add_library(DarkOS::Protocols ALIAS darkos_protocols)

@@ -6,6 +6,33 @@
  */
 #pragma once
 
-namespace network {
+#include <base/EventLoop.h>
 
-} // namespace network
+#include <cstdint>
+#include <string>
+
+namespace darkos::network {
+
+using EventLoop = ::darkos::EventLoop;
+
+enum class NetworkEventType {
+  LinkChanged,
+  InterfaceAdded,
+  InterfaceRemoved,
+  AddressAdded,
+  AddressRemoved,
+  Error,
+};
+
+struct NetworkEvent {
+  NetworkEventType type{NetworkEventType::LinkChanged};
+  std::uint64_t timestampNs{0};
+  std::uint32_t interfaceIndex{0};
+  std::string interfaceName;
+  std::string address;
+  bool up{false};
+  bool running{false};
+  int code{0};
+};
+
+} // namespace darkos::network

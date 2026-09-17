@@ -6,6 +6,24 @@
  */
 #pragma once
 
-namespace alarm {
+#include "alarm_types.h"
 
-} // namespace alarm
+#include <functional>
+#include <memory>
+#include <string>
+
+namespace darkos::alarm {
+
+class AlarmAction {
+public:
+  virtual ~AlarmAction() = default;
+  virtual int execute(const AlarmEvent &event, std::string &error) = 0;
+
+protected:
+  AlarmAction() = default;
+};
+
+using AlarmActionCallback = std::function<int(const AlarmEvent &, std::string &)>;
+std::shared_ptr<AlarmAction> createAlarmAction(AlarmActionCallback callback);
+
+} // namespace darkos::alarm

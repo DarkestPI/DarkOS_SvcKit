@@ -6,6 +6,22 @@
  */
 #pragma once
 
-namespace storage {
+#include "storage_types.h"
 
-} // namespace storage
+#include <media_video_sink.h>
+
+#include <string>
+
+namespace darkos::storage {
+
+class Recorder : public media::VideoPacketSink {
+public:
+  ~Recorder() override = default;
+  virtual std::string currentRecordingId() const = 0;
+  virtual std::uint64_t bytesWritten() const noexcept = 0;
+
+protected:
+  Recorder() = default;
+};
+
+} // namespace darkos::storage

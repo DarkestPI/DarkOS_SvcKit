@@ -13,7 +13,7 @@ endif()
 add_subdirectory(third_party)
 add_subdirectory(base)
 add_subdirectory(subsystems)
-add_subdirectory(protocol)
+add_subdirectory(protocols)
 
 add_library(darkos_svckit INTERFACE)
 target_link_libraries(darkos_svckit INTERFACE
@@ -22,7 +22,9 @@ target_link_libraries(darkos_svckit INTERFACE
     svckit_audio
     svckit_media
     svckit_networking
-    darkos_protocols
+    svckit_peripheral
+    svckit_storage
+    svckit_alarm
     DarkOS::Platform
 )
 add_library(DarkOS::SvcKit ALIAS darkos_svckit)

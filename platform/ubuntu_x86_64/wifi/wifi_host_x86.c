@@ -32,6 +32,7 @@
 #define HOST_WIFI_FAKE_IP "192.168.1.100"
 
 typedef struct host_wifi_priv {
+    int enabled;
     uint32_t state;                  /* wifi_state_t */
     char ssid[WIFI_SSID_MAX_LEN + 1]; /* 已连接热点 ssid */
     int32_t rssi;                    /* 已连接热点 rssi（dBm） */
@@ -74,7 +75,7 @@ static int host_wifi_get_capabilities(wifi_device_t *dev, wifi_caps_t *caps) {
     if (caps == NULL)
         return -EINVAL;
     memset(caps, 0, sizeof(*caps));
-    caps->supported_modes = WIFI_CAPS_MODE_STA | WIFI_CAPS_MODE_AP;
+    caps->supported_modes = WIFI_CAPS_MODE_STA;
     caps->supported_bands = WIFI_CAPS_BAND_2G4;
     return 0;
 }
@@ -83,9 +84,11 @@ static int host_wifi_scan(wifi_device_t *dev, wifi_scan_cb cb, void *ctx, int ti
     uint64_t start;
     size_t i;
 
-    (void)dev;
+    host_wifi_priv_t *priv = (host_wifi_priv_t *)dev->priv;
     if (cb == NULL)
         return -EINVAL;
+    if (!priv->enabled)
+        return -ENETDOWN;
 
     start = now_ms();
     for (i = 0; i < HOST_WIFI_FAKE_AP_COUNT; i++) {
@@ -106,6 +109,8 @@ static int host_wifi_connect(wifi_device_t *dev, const wifi_config_t *cfg) {
 
     if (cfg == NULL)
         return -EINVAL;
+    if (!priv->enabled)
+        return -ENETDOWN;
 
     for (i = 0; i < HOST_WIFI_FAKE_AP_COUNT; i++) {
         const wifi_ap_info_t *ap = &host_wifi_fake_aps[i];
@@ -133,6 +138,19 @@ static int host_wifi_disconnect(wifi_device_t *dev) {
     return 0;
 }
 
+static int host_wifi_enable(wifi_device_t *dev) {
+    host_wifi_priv_t *priv = (host_wifi_priv_t *)dev->priv;
+    priv->enabled = 1;
+    return 0;
+}
+
+static int host_wifi_disable(wifi_device_t *dev) {
+    host_wifi_priv_t *priv = (host_wifi_priv_t *)dev->priv;
+    host_wifi_disconnect(dev);
+    priv->enabled = 0;
+    return 0;
+}
+
 static int host_wifi_get_status(wifi_device_t *dev, wifi_status_t *status) {
     host_wifi_priv_t *priv = (host_wifi_priv_t *)dev->priv;
 
@@ -154,6 +172,9 @@ static int host_wifi_get_status(wifi_device_t *dev, wifi_status_t *status) {
 
 static const wifi_device_ops_t host_wifi_ops = {
     .get_capabilities = host_wifi_get_capabilities,
+    .wifi_enable = host_wifi_enable,
+    .wifi_get_status = host_wifi_get_status,
+    .wifi_disable = host_wifi_disable,
     .scan = host_wifi_scan,
     .connect = host_wifi_connect,
     .disconnect = host_wifi_disconnect,

@@ -6,6 +6,31 @@
  */
 #pragma once
 
-namespace network {
+#include <cstdint>
+#include <string>
+#include <vector>
 
-} // namespace network
+namespace darkos::network {
+
+enum class AddressFamily {
+  Unspecified,
+  IPv4,
+  IPv6,
+  Unix,
+};
+
+struct InterfaceAddress {
+  AddressFamily family{AddressFamily::Unspecified};
+  std::string address;
+};
+
+struct NetworkInterface {
+  std::uint32_t index{0};
+  std::string name;
+  bool up{false};
+  bool running{false};
+  bool loopback{false};
+  std::vector<InterfaceAddress> addresses;
+};
+
+} // namespace darkos::network

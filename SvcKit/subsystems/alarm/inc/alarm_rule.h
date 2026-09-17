@@ -6,6 +6,26 @@
  */
 #pragma once
 
-namespace alarm {
+#include "alarm_types.h"
 
-} // namespace alarm
+#include <cstdint>
+#include <memory>
+#include <string>
+
+namespace darkos::alarm {
+
+class AlarmRule {
+public:
+  virtual ~AlarmRule() = default;
+  virtual bool accept(const AlarmEvent &event) = 0;
+
+protected:
+  AlarmRule() = default;
+};
+
+std::shared_ptr<AlarmRule>
+createAlarmRule(std::string source, std::string type,
+                AlarmSeverity minimumSeverity = AlarmSeverity::Info,
+                std::uint64_t cooldownNs = 0);
+
+} // namespace darkos::alarm

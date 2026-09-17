@@ -3,9 +3,10 @@ find_package(Threads REQUIRED)
 
 add_subdirectory(svc_log)
 add_subdirectory(svc_board)
+add_subdirectory(runtime)
 
 add_library(svckit_base INTERFACE)
-target_link_libraries(svckit_base INTERFACE svc_log svc_board)
+target_link_libraries(svckit_base INTERFACE svc_log svc_board svckit_runtime)
 
 if(DARKOS_BUILD_SECURITY_COMPONENTS)
     add_subdirectory(svc_security)

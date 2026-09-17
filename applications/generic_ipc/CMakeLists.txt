@@ -25,7 +25,9 @@ add_executable(generic_ipc
 
 target_compile_features(generic_ipc PRIVATE cxx_std_17)
 
-target_link_libraries(generic_ipc PRIVATE DarkOS::SvcKit)
+target_link_libraries(generic_ipc PRIVATE
+    DarkOS::SvcKit
+    DarkOS::Protocol::RTSP)
 
 set(DARKOS_BOARD "ubuntu_x86_64_host" CACHE STRING
     "Board configuration packaged with generic_ipc")

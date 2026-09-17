@@ -1,16 +1,26 @@
-#include <hardware/hardware.h>
+#include <base/EventLoop.h>
+#include <alarm_manager.h>
 #include <media_pipeline.h>
-#include <serial/ISerial.h>
+#include <network_manager.h>
+#include <RtspServer.h>
 #include <svc_board/AppConfig.h>
 #include <svc_board/BoardConfig.h>
 #include <svc_log.h>
+#include <storage_manager.h>
 
-#include <array>
+#include <cerrno>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <memory>
+#include <pthread.h>
 #include <string>
+#include <sys/epoll.h>
+#include <sys/signalfd.h>
+#include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -30,10 +40,14 @@ std::filesystem::path defaultConfigDirectory() {
 
 struct Options {
     explicit Options(const std::filesystem::path &configDirectory)
-        : boardConfig((configDirectory / "board.json").string()), appConfig((configDirectory / "app.json").string()) {}
+        : boardConfig((configDirectory / "board.json").string()), appConfig((configDirectory / "app.json").string()),
+          storageDirectory(configDirectory.parent_path() / "data") {}
 
     std::string boardConfig;
     std::string appConfig;
+    std::filesystem::path storageDirectory;
+    bool serve{false};
+    std::uint16_t rtspPort{8554};
 };
 
 bool parseOptions(int argc, char **argv, Options &options) {
@@ -42,40 +56,30 @@ bool parseOptions(int argc, char **argv, Options &options) {
         if ((argument == "--board-config" || argument == "--app-config") && index + 1 < argc) {
             std::string &destination = argument == "--board-config" ? options.boardConfig : options.appConfig;
             destination = argv[++index];
+        } else if (argument == "--serve") {
+            options.serve = true;
+        } else if (argument == "--storage-dir" && index + 1 < argc) {
+            options.storageDirectory = argv[++index];
+        } else if (argument == "--rtsp-port" && index + 1 < argc) {
+            char *end = nullptr;
+            const unsigned long port = std::strtoul(argv[++index], &end, 10);
+            if (end == nullptr || *end != '\0' || port == 0 || port > 65535) {
+                SVC_LOGE(kTag, "invalid RTSP port");
+                return false;
+            }
+            options.rtspPort = static_cast<std::uint16_t>(port);
         } else {
-            SVC_LOGE(kTag, "usage: %s [--board-config path] [--app-config path]", argv[0]);
+            SVC_LOGE(kTag,
+                     "usage: %s [--board-config path] [--app-config path] "
+                     "[--storage-dir path] [--serve] [--rtsp-port port]",
+                     argv[0]);
             return false;
         }
     }
     return true;
 }
 
-bool loadRequiredHalModules() {
-    // Camera/Codec/Audio 由 SvcKit Media 内部加载；Application 只直接验证
-    // 尚未服务化的 Serial，避免越过媒体门面持有 HAL 对象。
-    constexpr std::array<const char *, 1> requiredModules = {
-        SERIAL_HARDWARE_MODULE_ID,
-    };
-
-    for (const char *id : requiredModules) {
-        const hw_module_t *module = nullptr;
-        const int result = hw_get_module(id, &module);
-        if (result != 0) {
-            const int errorNumber = result < 0 ? -result : result;
-            SVC_LOGE(kTag, "HAL module load failed: id=%s error=%s (%d)", id, std::strerror(errorNumber), result);
-            return false;
-        }
-
-        SVC_LOGI(
-            kTag, "HAL module loaded: id=%s name=\"%s\" module_api=%u.%u hal_api=%u.%u", module->id,
-            module->name != nullptr ? module->name : "unknown", static_cast<unsigned>(module->module_api_version >> 8),
-            static_cast<unsigned>(module->module_api_version & 0xff),
-            static_cast<unsigned>(module->hal_api_version >> 8), static_cast<unsigned>(module->hal_api_version & 0xff));
-    }
-    return true;
-}
-
-bool runMediaPipelineProbe() {
+bool runMediaPipelineProbe(const std::filesystem::path &storageDirectory) {
     darkos::media::MediaPipelineConfig config;
     config.video.capture.width = 320;
     config.video.capture.height = 240;
@@ -98,13 +102,26 @@ bool runMediaPipelineProbe() {
         return false;
     }
 
+    darkos::storage::StorageConfig storageConfig;
+    storageConfig.root = storageDirectory / "recordings";
+    storageConfig.maxBytes = 2ULL * 1024ULL * 1024ULL * 1024ULL;
+    storageConfig.minimumFreeBytes = 128ULL * 1024ULL * 1024ULL;
+    auto storage = darkos::storage::StorageManager::create(storageConfig, error);
+    auto recorder = storage != nullptr ? storage->createRecorder("probe", "", error) : nullptr;
+    if (storage == nullptr || recorder == nullptr) {
+        SVC_LOGE(kTag, "create storage recorder failed: %s", error.c_str());
+        return false;
+    }
+
     // 添加音视频探针 Sink；队列满时丢弃最旧数据，以免阻塞媒体管线。
     auto videoSink = darkos::media::createVideoProbeSink();
     auto audioSink = darkos::media::createAudioProbeSink();
     darkos::media::SinkId videoSinkId = 0;
     darkos::media::SinkId audioSinkId = 0;
+    darkos::media::SinkId recorderSinkId = 0;
     const darkos::media::MediaQueueConfig sinkQueue{8, darkos::media::BackpressurePolicy::DropOldest};
     if (pipeline->addVideoSink(videoSink, sinkQueue, videoSinkId) != 0 ||
+        pipeline->addVideoSink(recorder, sinkQueue, recorderSinkId) != 0 ||
         pipeline->addAudioSink(audioSink, sinkQueue, audioSinkId) != 0) {
         SVC_LOGE(kTag, "add media sink failed");
         return false;
@@ -128,6 +145,21 @@ bool runMediaPipelineProbe() {
         return false;
     }
 
+    // 消费控制面事件，验证生命周期事件没有停留在无人读取的内部队列。
+    bool sawRunning = false;
+    bool sawStopped = false;
+    darkos::media::MediaEvent event;
+    while (pipeline->waitEvent(event, 0) == 0) {
+        sawRunning = sawRunning || event.state == darkos::media::PipelineState::Running;
+        sawStopped = sawStopped || event.state == darkos::media::PipelineState::Stopped;
+        SVC_LOGI(kTag, "media event: component=%s state=%u code=%d message=%s", event.component.c_str(),
+                 static_cast<unsigned>(event.state), event.code, event.message.c_str());
+    }
+    if (!sawRunning || !sawStopped) {
+        SVC_LOGE(kTag, "media lifecycle event sequence incomplete");
+        return false;
+    }
+
     // 销毁管线
     if (!receivedEnoughPackets) {
         SVC_LOGE(kTag, "media pipeline timed out waiting for audio/video data");
@@ -136,13 +168,237 @@ bool runMediaPipelineProbe() {
 
     const darkos::media::VideoProbeStats videoStats = videoSink->snapshot();
     const darkos::media::AudioProbeStats audioStats = audioSink->snapshot();
+    const darkos::storage::StorageStats storageStats = storage->stats();
+    if (storageStats.recordingCount == 0 || recorder->bytesWritten() == 0) {
+        SVC_LOGE(kTag, "storage recorder did not persist encoded video");
+        return false;
+    }
     SVC_LOGI(kTag,
              "SvcKit Media A/V pipeline OK: video_packets=%zu video_bytes=%zu keyframes=%zu "
              "audio_packets=%zu audio_bytes=%zu",
              static_cast<std::size_t>(videoStats.packetCount), static_cast<std::size_t>(videoStats.byteCount),
              static_cast<std::size_t>(videoStats.keyframeCount), static_cast<std::size_t>(audioStats.packetCount),
              static_cast<std::size_t>(audioStats.byteCount));
+    SVC_LOGI(kTag, "SvcKit Storage OK: recordings=%llu managed_bytes=%llu",
+             static_cast<unsigned long long>(storageStats.recordingCount),
+             static_cast<unsigned long long>(storageStats.managedBytes));
     return true;
+}
+
+bool probeNetworkState() {
+    std::vector<darkos::network::NetworkInterface> interfaces;
+    std::string error;
+    const int result = darkos::network::NetworkManager::snapshot(interfaces, error);
+    if (result != 0) {
+        // Network availability is a degraded state for this host probe, not a
+        // reason to suppress local media service startup (restricted
+        // containers may forbid the netlink socket used by getifaddrs).
+        SVC_LOGW(kTag, "network snapshot unavailable: %s (%d)", error.c_str(), result);
+        return true;
+    }
+    for (const auto &interface : interfaces) {
+        SVC_LOGI(kTag, "network interface: name=%s index=%u up=%d running=%d addresses=%zu",
+                 interface.name.c_str(), interface.index, interface.up, interface.running,
+                 interface.addresses.size());
+    }
+    return !interfaces.empty();
+}
+
+bool runCaptureService(const std::filesystem::path &storageDirectory, std::uint16_t rtspPort) {
+    sigset_t signals;
+    sigemptyset(&signals);
+    sigaddset(&signals, SIGINT);
+    sigaddset(&signals, SIGTERM);
+    if (pthread_sigmask(SIG_BLOCK, &signals, nullptr) != 0) {
+        SVC_LOGE(kTag, "failed to block termination signals");
+        return false;
+    }
+
+    std::unique_ptr<darkos::EventLoop> loop(darkos::EventLoop::create());
+    if (loop == nullptr) {
+        SVC_LOGE(kTag, "create EventLoop failed");
+        return false;
+    }
+    const int signalFd = signalfd(-1, &signals, SFD_NONBLOCK | SFD_CLOEXEC);
+    if (signalFd < 0 ||
+        !loop->watchFd(signalFd, EPOLLIN, [&]([[maybe_unused]] std::uint32_t events) {
+            signalfd_siginfo info{};
+            if (read(signalFd, &info, sizeof(info)) == sizeof(info))
+                SVC_LOGI(kTag, "signal %u received, stopping", info.ssi_signo);
+            loop->quit();
+        })) {
+        SVC_LOGE(kTag, "install signal watcher failed: %s", std::strerror(errno));
+        if (signalFd >= 0)
+            close(signalFd);
+        return false;
+    }
+
+    std::string error;
+    darkos::alarm::AlarmConfig alarmConfig{storageDirectory / "alarms.journal", 1000};
+    auto alarmManager = darkos::alarm::AlarmManager::create(*loop, alarmConfig, error);
+    if (alarmManager == nullptr ||
+        alarmManager->addRule(darkos::alarm::createAlarmRule(
+            "network", "", darkos::alarm::AlarmSeverity::Warning, 5'000'000'000ULL)) != 0 ||
+        alarmManager->addRule(darkos::alarm::createAlarmRule(
+            "media", "", darkos::alarm::AlarmSeverity::Warning, 1'000'000'000ULL)) != 0 ||
+        alarmManager->addRule(darkos::alarm::createAlarmRule(
+            "system", "", darkos::alarm::AlarmSeverity::Info, 0)) != 0 ||
+        alarmManager->addAction(darkos::alarm::createAlarmAction(
+            [](const darkos::alarm::AlarmEvent &event, std::string &) {
+                SVC_LOGW(kTag, "alarm: id=%s source=%s type=%s severity=%u message=%s", event.id.c_str(),
+                         event.source.c_str(), event.type.c_str(), static_cast<unsigned>(event.severity),
+                         event.message.c_str());
+                return 0;
+            })) != 0) {
+        SVC_LOGE(kTag, "create alarm service failed: %s", error.c_str());
+        loop->unwatchFd(signalFd);
+        close(signalFd);
+        return false;
+    }
+
+    auto networkManager = darkos::network::NetworkManager::create(*loop, error);
+    if (networkManager != nullptr) {
+        const int result = networkManager->start([&](const darkos::network::NetworkEvent &event) {
+            SVC_LOGI(kTag, "network event: type=%u interface=%s address=%s up=%d running=%d code=%d",
+                     static_cast<unsigned>(event.type), event.interfaceName.c_str(), event.address.c_str(), event.up,
+                     event.running, event.code);
+            if ((event.type == darkos::network::NetworkEventType::LinkChanged && !event.up) ||
+                event.type == darkos::network::NetworkEventType::Error) {
+                darkos::alarm::AlarmEvent alarm;
+                alarm.source = "network";
+                alarm.type = event.type == darkos::network::NetworkEventType::Error ? "monitor_error" : "link_down";
+                alarm.message = event.interfaceName.empty() ? "network monitor failure"
+                                                            : event.interfaceName + " link is down";
+                alarm.severity = event.type == darkos::network::NetworkEventType::Error
+                                     ? darkos::alarm::AlarmSeverity::Critical
+                                     : darkos::alarm::AlarmSeverity::Warning;
+                alarm.timestampNs = event.timestampNs;
+                alarmManager->publish(std::move(alarm));
+            }
+        });
+        if (result != 0)
+            SVC_LOGW(kTag, "network event monitor start failed: %d", result);
+    } else {
+        SVC_LOGW(kTag, "network event monitor unavailable: %s", error.c_str());
+    }
+
+    darkos::media::MediaPipelineConfig config;
+    config.video.capture.width = 320;
+    config.video.capture.height = 240;
+    config.video.capture.fps = 15;
+    config.video.encoder.codec = darkos::media::VideoCodec::H264;
+    config.video.encoder.bitrateBps = 256'000;
+    config.video.encoder.gop = 15;
+    config.audio.capture.sampleRate = 16'000;
+    config.audio.capture.channelCount = 1;
+    config.audio.capture.framesPerBuffer = 320;
+    config.audio.encoder.codec = darkos::media::AudioCodec::G711A;
+
+    auto pipeline = darkos::media::createMediaPipeline(config, error);
+    darkos::storage::StorageConfig storageConfig;
+    storageConfig.root = storageDirectory / "recordings";
+    storageConfig.maxBytes = 2ULL * 1024ULL * 1024ULL * 1024ULL;
+    storageConfig.minimumFreeBytes = 128ULL * 1024ULL * 1024ULL;
+    auto storage = darkos::storage::StorageManager::create(storageConfig, error);
+    auto recorder = storage != nullptr ? storage->createRecorder("continuous", "", error) : nullptr;
+    darkos::protocols::rtsp::RtspServerOptions rtspOptions;
+    rtspOptions.port = rtspPort;
+    rtspOptions.mountPath = "live";
+    auto rtsp = darkos::protocols::rtsp::RtspServer::create(*loop, rtspOptions, error);
+    if (pipeline == nullptr || storage == nullptr || recorder == nullptr || rtsp == nullptr) {
+        SVC_LOGE(kTag, "create capture/storage graph failed: %s", error.c_str());
+        loop->unwatchFd(signalFd);
+        close(signalFd);
+        return false;
+    }
+    if (alarmManager->addAction(darkos::alarm::createAlarmAction(
+            [&](const darkos::alarm::AlarmEvent &event, std::string &actionError) {
+                if (event.source == "system")
+                    return 0;
+                auto alarmRecorder = storage->createRecorder("alarm", event.id, actionError);
+                if (alarmRecorder == nullptr)
+                    return -EIO;
+                darkos::media::SinkId alarmRecorderId = 0;
+                const int result = pipeline->addVideoSink(
+                    alarmRecorder, {32, darkos::media::BackpressurePolicy::DropOldest}, alarmRecorderId);
+                if (result != 0) {
+                    actionError = "attach alarm recorder failed";
+                    return result;
+                }
+                if (loop->scheduleEvery(10'000'000'000ULL, 0,
+                                        [pipelinePtr = pipeline.get(), alarmRecorderId] {
+                                            pipelinePtr->removeVideoSink(alarmRecorderId);
+                                        }) == 0) {
+                    pipeline->removeVideoSink(alarmRecorderId);
+                    actionError = "schedule alarm recording stop failed";
+                    return -EAGAIN;
+                }
+                return 0;
+            })) != 0) {
+        SVC_LOGE(kTag, "register alarm recording action failed");
+        loop->unwatchFd(signalFd);
+        close(signalFd);
+        return false;
+    }
+    darkos::media::SinkId recorderId = 0;
+    darkos::media::SinkId rtspId = 0;
+    if (pipeline->addVideoSink(recorder, {32, darkos::media::BackpressurePolicy::DropOldest}, recorderId) != 0 ||
+        pipeline->addVideoSink(rtsp, {32, darkos::media::BackpressurePolicy::DropOldest}, rtspId) != 0) {
+        SVC_LOGE(kTag, "attach storage/RTSP sink failed");
+        loop->unwatchFd(signalFd);
+        close(signalFd);
+        return false;
+    }
+
+    if (pipeline->start() != 0) {
+        SVC_LOGE(kTag, "start media pipeline failed");
+        loop->unwatchFd(signalFd);
+        close(signalFd);
+        return false;
+    }
+
+    loop->scheduleEvery(100'000'000ULL, 100'000'000ULL, [&] {
+        darkos::media::MediaEvent event;
+        while (pipeline->waitEvent(event, 0) == 0) {
+            SVC_LOGI(kTag, "media event: component=%s state=%u code=%d message=%s", event.component.c_str(),
+                     static_cast<unsigned>(event.state), event.code, event.message.c_str());
+            if (event.state == darkos::media::PipelineState::Failed) {
+                darkos::alarm::AlarmEvent alarm;
+                alarm.source = "media";
+                alarm.type = "pipeline_failed";
+                alarm.message = event.message;
+                alarm.severity = darkos::alarm::AlarmSeverity::Critical;
+                alarm.timestampNs = event.timestampNs;
+                alarmManager->publish(std::move(alarm));
+                loop->post([&] { loop->quit(); });
+            }
+        }
+    });
+
+    alarmManager->publish({"", "system", "service_started", "capture service started",
+                           darkos::alarm::AlarmSeverity::Info, 0});
+    SVC_LOGI(kTag, "capture/storage/RTSP service ready: rtsp://0.0.0.0:%u/live", rtsp->listeningPort());
+    loop->run();
+
+    const int stopResult = pipeline->stop();
+    if (networkManager != nullptr)
+        networkManager->stop();
+    loop->unwatchFd(signalFd);
+    close(signalFd);
+    const auto storageStats = storage->stats();
+    const auto alarmStats = alarmManager->stats();
+    const auto rtspStats = rtsp->stats();
+    SVC_LOGI(kTag, "Storage/Alarm stopped: recordings=%llu bytes=%llu alarms=%llu suppressed=%llu",
+             static_cast<unsigned long long>(storageStats.recordingCount),
+             static_cast<unsigned long long>(storageStats.managedBytes),
+             static_cast<unsigned long long>(alarmStats.accepted),
+             static_cast<unsigned long long>(alarmStats.suppressed));
+    SVC_LOGI(kTag, "RTSP stopped: connections=%llu requests=%llu video_packets=%llu rtp_packets=%llu",
+             static_cast<unsigned long long>(rtspStats.acceptedConnections),
+             static_cast<unsigned long long>(rtspStats.requests),
+             static_cast<unsigned long long>(rtspStats.videoPackets),
+             static_cast<unsigned long long>(rtspStats.rtpPackets));
+    return stopResult == 0;
 }
 
 } // namespace
@@ -184,22 +440,16 @@ int main(int argc, char **argv) {
                  port->device.c_str(), darkos::serialElectricalName(port->electrical), binding.baud);
     }
 
-    // 3. 加载尚未服务化的 HAL 模块
-    if (!loadRequiredHalModules())
+    // 3. 只通过 SvcKit Network 门面读取系统网络状态。
+    if (!probeNetworkState())
         return EXIT_FAILURE;
 
-    // 4. 只通过 SvcKit Media 门面验证 Camera→H.264 + 麦克风→G.711A 管线。
-    if (!runMediaPipelineProbe())
+    // 4. 默认执行有限探针；--serve 启动常驻采集/录像服务并等待 SIGINT/SIGTERM。
+    if (options.serve ? !runCaptureService(options.storageDirectory, options.rtspPort)
+                      : !runMediaPipelineProbe(options.storageDirectory))
         return EXIT_FAILURE;
 
-    SVC_LOGI(kTag, "configuration, HAL and SvcKit Media validated; service wiring is ready");
-
-    printf("\n");
-    SVC_LOGE(kTag, "this is an SVC_LOGE log for testing");
-    SVC_LOGW(kTag, "this is an SVC_LOGW log for testing");
-    SVC_LOGI(kTag, "this is an SVC_LOGI log for testing");
-    SVC_LOGD(kTag, "this is an SVC_LOGD log for testing");
-    SVC_LOGV(kTag, "this is an SVC_LOGV log for testing");
+    SVC_LOGI(kTag, "configuration, Network, Media, Storage and Alarm completed cleanly");
 
     return 0;
 }
