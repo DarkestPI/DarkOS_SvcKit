@@ -62,6 +62,7 @@ public:
 
   int setNonBlocking(bool enabled = true) noexcept;
   int setReuseAddress(bool enabled = true) noexcept;
+  int setMulticastTtl(std::uint8_t ttl) noexcept;
   int bind(const Address &address) noexcept;
   int listen(int backlog = 16) noexcept;
   int connect(const Address &address) noexcept;

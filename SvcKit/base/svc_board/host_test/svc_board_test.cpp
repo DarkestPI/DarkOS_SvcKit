@@ -73,6 +73,27 @@ void testValidConfiguration(const TemporaryDirectory &temporary) {
       "serial_bindings": {
         "ptz": {"resource": "uart_ptz", "baud": 9600},
         "device_control": {"resource": "uart_control", "baud": 115200}
+      },
+      "rtsp": {
+        "enabled": true,
+        "bind_address": "127.0.0.1",
+        "port": 9554,
+        "mount_path": "camera",
+        "session_timeout_seconds": 30,
+        "rtcp_report_interval_ms": 2000,
+        "maximum_rtp_payload_bytes": 1000,
+        "maximum_client_backlog_bytes": 1048576,
+        "authentication": {
+          "username": "admin",
+          "password_env": "TEST_RTSP_PASSWORD"
+        },
+        "multicast": {
+          "enabled": true,
+          "address": "239.1.2.3",
+          "video_port": 6000,
+          "audio_port": 6002,
+          "ttl": 8
+        }
       }
     })json");
 
@@ -95,6 +116,22 @@ void testValidConfiguration(const TemporaryDirectory &temporary) {
   CHECK(darkos::AppConfig::load(appPath, app, error));
   CHECK(app.validate(board, error));
   CHECK(app.findSerialBinding("ptz") != nullptr);
+  CHECK(app.rtsp().enabled);
+  CHECK(app.rtsp().bindAddress == "127.0.0.1");
+  CHECK(app.rtsp().port == 9554);
+  CHECK(app.rtsp().mountPath == "camera");
+  CHECK(app.rtsp().sessionTimeoutSeconds == 30);
+  CHECK(app.rtsp().rtcpReportIntervalMs == 2000);
+  CHECK(app.rtsp().maximumRtpPayloadBytes == 1000);
+  CHECK(app.rtsp().maximumClientBacklogBytes == 1048576);
+  CHECK(app.rtsp().authentication.username == "admin");
+  CHECK(app.rtsp().authentication.passwordEnvironment ==
+        "TEST_RTSP_PASSWORD");
+  CHECK(app.rtsp().multicast.enabled);
+  CHECK(app.rtsp().multicast.address == "239.1.2.3");
+  CHECK(app.rtsp().multicast.videoPort == 6000);
+  CHECK(app.rtsp().multicast.audioPort == 6002);
+  CHECK(app.rtsp().multicast.ttl == 8);
 }
 
 void testSemanticFailures(const TemporaryDirectory &temporary) {
@@ -134,6 +171,7 @@ void testSemanticFailures(const TemporaryDirectory &temporary) {
 
 void testSyntaxAndSchemaFailures(const TemporaryDirectory &temporary) {
   darkos::BoardConfig board;
+  darkos::AppConfig app;
   std::string error;
   CHECK(!darkos::BoardConfig::load(temporary.write("broken.json", "{bad"),
                                    board, error));
@@ -168,6 +206,35 @@ void testSyntaxAndSchemaFailures(const TemporaryDirectory &temporary) {
     })json");
   CHECK(!darkos::BoardConfig::load(duplicate, board, error));
   CHECK(error.find("duplicate member") != std::string::npos);
+
+  const std::string invalidRtspPort =
+      temporary.write("invalid-rtsp-port.json", R"json({
+      "schema_version": "0.0.1",
+      "serial_bindings": {},
+      "rtsp": {"port": 0}
+    })json");
+  CHECK(!darkos::AppConfig::load(invalidRtspPort, app, error));
+  CHECK(error.find("rtsp configuration") != std::string::npos);
+
+  const std::string invalidMulticast =
+      temporary.write("invalid-multicast.json", R"json({
+      "schema_version": "0.0.1",
+      "serial_bindings": {},
+      "rtsp": {
+        "multicast": {"enabled": true, "address": "192.168.1.1"}
+      }
+    })json");
+  CHECK(!darkos::AppConfig::load(invalidMulticast, app, error));
+  CHECK(error.find("rtsp multicast") != std::string::npos);
+
+  const std::string unknownRtspMember =
+      temporary.write("unknown-rtsp-member.json", R"json({
+      "schema_version": "0.0.1",
+      "serial_bindings": {},
+      "rtsp": {"transport": "tcp"}
+    })json");
+  CHECK(!darkos::AppConfig::load(unknownRtspMember, app, error));
+  CHECK(error.find("unknown member") != std::string::npos);
 }
 
 } // namespace

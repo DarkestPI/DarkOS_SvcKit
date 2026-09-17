@@ -20,6 +20,10 @@ endif()
 include("${DARKOS_SDK_PATH}/cmake/DarkOS.cmake")
 
 add_executable(generic_ipc
+    src/AppOptions.cpp
+    src/CaptureService.cpp
+    src/MediaSettings.cpp
+    src/Probes.cpp
     src/main.cpp
 )
 

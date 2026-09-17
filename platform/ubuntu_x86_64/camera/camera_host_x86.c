@@ -25,6 +25,7 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,7 +45,7 @@ typedef struct host_camera_priv {
     camera_frame_cb cb;
     void *cb_ctx;
     pthread_t thread;
-    volatile int running;
+    atomic_bool running;
     int streaming;
 
     int32_t brightness;
@@ -64,11 +65,21 @@ static uint64_t now_ns(void) {
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
 
-/* 按毫秒分片 sleep，期间检查退出标志，使 stop 能及时响应 */
-static void sleep_ms_interruptible(host_camera_priv_t *priv, unsigned ms) {
-    unsigned i;
-    for (i = 0; i < ms && priv->running; i++)
-        usleep(1000);
+static void add_ns(struct timespec *value, uint64_t nanoseconds) {
+    value->tv_sec += (time_t)(nanoseconds / 1000000000ull);
+    value->tv_nsec += (long)(nanoseconds % 1000000000ull);
+    if (value->tv_nsec >= 1000000000L) {
+        value->tv_sec++;
+        value->tv_nsec -= 1000000000L;
+    }
+}
+
+/* 单次绝对时间等待，避免按 1ms 分片造成每秒近千次无效唤醒。 */
+static void sleep_until_frame(host_camera_priv_t *priv, const struct timespec *deadline) {
+    int rc;
+    do {
+        rc = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, deadline, NULL);
+    } while (rc == EINTR && atomic_load_explicit(&priv->running, memory_order_relaxed));
 }
 
 static int ensure_buf(host_camera_priv_t *priv) {
@@ -121,14 +132,16 @@ static void fill_test_pattern(host_camera_priv_t *priv, camera_frame_t *frame) {
 static void *generate_thread(void *arg) {
     host_camera_priv_t *priv = (host_camera_priv_t *)arg;
     unsigned fps = priv->fmt.fps ? priv->fmt.fps : 30;
-    unsigned interval_ms = 1000 / fps;
+    uint64_t interval_ns = 1000000000ull / fps;
+    struct timespec next_frame;
 
     char tname[16];
     snprintf(tname, sizeof(tname), "cam%d.gen", priv->idx);
     tname[sizeof(tname) - 1] = '\0';
     pthread_setname_np(pthread_self(), tname);
+    clock_gettime(CLOCK_MONOTONIC, &next_frame);
 
-    while (priv->running) {
+    while (atomic_load_explicit(&priv->running, memory_order_relaxed)) {
         camera_frame_t frame;
         if (ensure_buf(priv) != 0)
             break;
@@ -136,7 +149,8 @@ static void *generate_thread(void *arg) {
         priv->seq++;
         if (priv->cb != NULL)
             priv->cb(priv->cb_ctx, &frame);
-        sleep_ms_interruptible(priv, interval_ms);
+        add_ns(&next_frame, interval_ns);
+        sleep_until_frame(priv, &next_frame);
     }
     return NULL;
 }
@@ -201,10 +215,10 @@ static int host_camera_start(camera_device_t *dev) {
 
     priv->streaming = 1;
     if (priv->cb != NULL) {
-        priv->running = 1;
+        atomic_store_explicit(&priv->running, 1, memory_order_relaxed);
         rc = pthread_create(&priv->thread, NULL, generate_thread, priv);
         if (rc != 0) {
-            priv->running = 0;
+            atomic_store_explicit(&priv->running, 0, memory_order_relaxed);
             priv->streaming = 0;
             return -rc;
         }
@@ -219,8 +233,8 @@ static int host_camera_stop(camera_device_t *dev) {
         return 0;
 
     priv->streaming = 0;
-    if (priv->running) {
-        priv->running = 0;
+    if (atomic_load_explicit(&priv->running, memory_order_relaxed)) {
+        atomic_store_explicit(&priv->running, 0, memory_order_relaxed);
         pthread_join(priv->thread, NULL);
     }
     return 0;
@@ -407,6 +421,7 @@ static int host_camera_open(const hw_module_t *module, const char *id, hw_device
 
     priv->fmt = (camera_format_t){
         .width = 1920, .height = 1080, .pixel_format = CAMERA_PIX_FMT_NV12, .fps = 30};
+    atomic_init(&priv->running, 0);
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
     dev->common.version = CAMERA_DEVICE_API_VERSION_1_0;

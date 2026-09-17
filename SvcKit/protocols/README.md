@@ -19,9 +19,13 @@ Network、Storage、Alarm 或 Peripheral 的依赖。
 ## RTSP 第一阶段
 
 当前 RTSP 服务支持 `OPTIONS`、`DESCRIBE`、`SETUP`、`PLAY`、`PAUSE`、
-`TEARDOWN`、`GET_PARAMETER` 和 `SET_PARAMETER`，支持 RTP over RTSP/TCP 与
-RTP/UDP 单播，并将 Media Pipeline 输出的 Annex-B H.264 打包为 RFC 6184 RTP。
+`TEARDOWN`、`GET_PARAMETER` 和 `SET_PARAMETER`，提供：
 
-本阶段聚焦可拉流的最小闭环，尚未包含鉴权、RTCP Sender Report、会话超时清理、
-音频轨和组播。这些能力应继续在 RTSP 模块内扩展，不应下沉到 Media 或 Network
-子系统。
+- RTP over RTSP/TCP、RTP/UDP 单播及 IPv4 UDP 组播；
+- Annex-B H.264（RFC 6184）和 G.711 A-law/u-law 音频轨；
+- 视频、音频 RTCP Sender Report 与 SDES CNAME；
+- 可选 RTSP Digest/MD5 鉴权；
+- 可配置会话超时及自动资源回收；
+- 组播单发布者约束，避免多个 RTSP 控制连接向同一组播地址重复发包。
+
+这些能力都保留在 RTSP 模块内部，不下沉到 Media 或 Network 子系统。

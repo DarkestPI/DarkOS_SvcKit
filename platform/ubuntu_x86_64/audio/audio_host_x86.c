@@ -28,11 +28,14 @@
 #define HOST_AUDIO_SINE_FREQ_HZ 440.0 /* 输入方向正弦波频率 */
 #define HOST_AUDIO_SINE_AMP 9830.0    /* 幅度：0.3 * 32767 */
 #define HOST_AUDIO_BYTES_PER_SAMPLE 2 /* S16LE */
+#define HOST_AUDIO_PI 3.14159265358979323846
+#define HOST_AUDIO_TWO_PI (2.0 * HOST_AUDIO_PI)
 
 typedef struct host_audio_stream {
     audio_format_t fmt;
     int running;
     uint64_t sample_index; /* 已产生的采样点序号，驱动正弦波相位连续 */
+    double phase;         /* 有界相位，避免随运行时间增长的归约开销 */
 } host_audio_stream_t;
 
 typedef struct host_audio_priv {
@@ -54,18 +57,10 @@ static uint64_t now_ns(void) {
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
 
-/* 不依赖 libm 的正弦近似：归约到 [-PI, PI] 后做泰勒展开，精度足够驱动测试音 */
+/* 不依赖 libm 的正弦近似；调用方保证相位位于 [-PI, PI]。 */
 static double host_sin(double x) {
-    const double pi = 3.14159265358979323846;
-    const double two_pi = 2.0 * pi;
     double x2, term, sum;
     int n;
-
-    /* 归约到 [-PI, PI] */
-    while (x > pi)
-        x -= two_pi;
-    while (x < -pi)
-        x += two_pi;
 
     x2 = x * x;
     term = x;
@@ -134,6 +129,7 @@ static int host_audio_set_format(audio_device_t *dev, audio_direction_t dir,
 
     stream->fmt = *fmt;
     stream->sample_index = 0;
+    stream->phase = 0.0;
     return 0;
 }
 
@@ -161,6 +157,7 @@ static int host_audio_start(audio_device_t *dev, audio_direction_t dir) {
 
     stream->running = 1;
     stream->sample_index = 0;
+    stream->phase = 0.0;
     return 0;
 }
 
@@ -180,6 +177,7 @@ static int host_audio_stop(audio_device_t *dev, audio_direction_t dir) {
 static int host_audio_read(audio_device_t *dev, audio_buffer_t *buf, int timeout_ms) {
     host_audio_priv_t *priv = (host_audio_priv_t *)dev->priv;
     uint32_t frame_bytes, frames, i, ch;
+    double phase, phase_step;
     int16_t *pcm;
 
     (void)timeout_ms; /* 主机实现按数据时长节拍返回，无额外阻塞等待 */
@@ -194,15 +192,20 @@ static int host_audio_read(audio_device_t *dev, audio_buffer_t *buf, int timeout
     if (frames == 0)
         return -ENOSPC;
 
-    /* 生成 440Hz 正弦波，各声道复制同一样本，相位随流持续递增 */
+    /* 生成 440Hz 正弦波。相位始终限制在 [-PI, PI]，每个采样点 O(1)。 */
     pcm = (int16_t *)buf->data;
+    phase = priv->in.phase;
+    phase_step = HOST_AUDIO_TWO_PI * HOST_AUDIO_SINE_FREQ_HZ /
+                 (double)priv->in.fmt.sample_rate;
     for (i = 0; i < frames; i++) {
-        double phase = HOST_AUDIO_SINE_FREQ_HZ * 2.0 * 3.14159265358979323846 *
-                       (double)(priv->in.sample_index + i) / (double)priv->in.fmt.sample_rate;
         int16_t sample = (int16_t)(HOST_AUDIO_SINE_AMP * host_sin(phase));
         for (ch = 0; ch < priv->in.fmt.channel_count; ch++)
             pcm[i * priv->in.fmt.channel_count + ch] = sample;
+        phase += phase_step;
+        if (phase > HOST_AUDIO_PI)
+            phase -= HOST_AUDIO_TWO_PI;
     }
+    priv->in.phase = phase;
     priv->in.sample_index += frames;
 
     buf->size = frames * frame_bytes;

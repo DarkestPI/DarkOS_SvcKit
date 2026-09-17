@@ -1,16 +1,25 @@
 # Generic IPC（Ubuntu x86_64）
 
-这是用于 Ubuntu x86_64 宿主机开发和验证的通用 IPC 工程。它使用本机编译器，
-并构建主机参考 HAL 插件 `hal.host_x86.so`，不依赖 Rockchip 交叉工具链。
+`generic_ipc` 是 Ubuntu x86_64 上的 IPC 参考应用。目前包含：
+
+- Camera → H.264 与 Audio → G.711A 媒体管线
+- H.264 + G.711A RTSP 服务
+- RTSP Digest 鉴权、TCP/UDP 单播、UDP 组播、RTCP Sender Report
+- 连续录像、报警日志、网络状态与会话超时回收
+
+应用只调用 SvcKit，不直接依赖 Platform HAL。宿主机运行时会加载
+`hal.host_x86.so`，因此不需要 Rockchip 交叉工具链或真实摄像头。
 
 ## 构建
+
+在仓库根目录执行：
 
 ```bash
 cmake --preset generic_ipc
 cmake --build --preset generic_ipc --parallel
 ```
 
-输出目录：
+输出位于：
 
 ```text
 output/generic_ipc/
@@ -20,66 +29,138 @@ output/generic_ipc/
 └── lib/hal.host_x86.so
 ```
 
-## 运行
+构建时会把 `applications/generic_ipc/etc/app.json` 复制到输出目录。修改源配置后，
+需要重新执行构建命令；也可以用 `--app-config` 直接加载另一份配置。
 
-程序默认从可执行文件同级输出树的 `etc/` 读取配置，因此可以从任意工作目录直接运行：
+## 快速运行
+
+启动常驻采集、录像和 RTSP 服务：
+
+```bash
+./output/generic_ipc/bin/generic_ipc --serve
+```
+
+默认拉流地址：
+
+```bash
+ffplay -rtsp_transport tcp rtsp://127.0.0.1:8554/live
+```
+
+也可以验证 UDP 单播：
+
+```bash
+ffplay -rtsp_transport udp rtsp://127.0.0.1:8554/live
+```
+
+按 `Ctrl+C` 停止服务。录像默认写入 `output/generic_ipc/data/recordings/`，报警日志
+写入 `output/generic_ipc/data/alarms.journal`。
+
+不带 `--serve` 时，程序只执行一次配置、网络、音视频、存储探针，然后自行退出：
 
 ```bash
 ./output/generic_ipc/bin/generic_ipc
 ```
 
-默认运行有限的音视频、存储、事件与网络状态探针并退出。启动常驻采集服务：
+## RTSP 配置
+
+RTSP 参数统一放在 `applications/generic_ipc/etc/app.json`：
+
+```json
+{
+  "rtsp": {
+    "enabled": true,
+    "bind_address": "0.0.0.0",
+    "port": 8554,
+    "mount_path": "live",
+    "session_timeout_seconds": 60,
+    "rtcp_report_interval_ms": 5000,
+    "maximum_rtp_payload_bytes": 1200,
+    "maximum_client_backlog_bytes": 2097152,
+    "authentication": {
+      "username": "",
+      "password_env": "DARKOS_RTSP_PASSWORD"
+    },
+    "multicast": {
+      "enabled": false,
+      "address": "239.255.0.1",
+      "video_port": 5004,
+      "audio_port": 5006,
+      "ttl": 16
+    }
+  }
+}
+```
+
+主要参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `enabled` | 是否启动 RTSP 服务 |
+| `bind_address` / `port` | 监听地址和端口 |
+| `mount_path` | URL 路径，不含 `/` |
+| `session_timeout_seconds` | 无活动会话的回收时间 |
+| `rtcp_report_interval_ms` | RTCP Sender Report 周期 |
+| `authentication.username` | Digest 用户名；空字符串表示关闭鉴权 |
+| `authentication.password_env` | 保存密码的环境变量名，密码不写入 JSON |
+| `multicast.enabled` | 是否允许客户端通过 UDP 组播接收 |
+| `multicast.video_port` | 视频 RTP 端口；对应 RTCP 端口为该值加 1 |
+| `multicast.audio_port` | 音频 RTP 端口；对应 RTCP 端口为该值加 1 |
+
+### 开启鉴权
+
+把 `authentication.username` 改为 `admin`，重新构建，然后通过配置指定的环境变量
+注入密码：
 
 ```bash
-./output/generic_ipc/bin/generic_ipc --serve
-# 可选指定 RTSP 端口以及录像、报警持久化目录
+DARKOS_RTSP_PASSWORD='change-me' \
+  ./output/generic_ipc/bin/generic_ipc --serve
+
+ffplay -rtsp_transport tcp \
+  'rtsp://admin:change-me@127.0.0.1:8554/live'
+```
+
+用户名非空但密码环境变量未设置时，应用会拒绝启动，避免意外开放无鉴权服务。
+
+### 开启组播
+
+把 `multicast.enabled` 改为 `true`，重新构建并启动，然后执行：
+
+```bash
+ffplay -rtsp_transport udp_multicast rtsp://127.0.0.1:8554/live
+```
+
+默认视频使用 `239.255.0.1:5004/5005`，音频使用
+`239.255.0.1:5006/5007`（RTP/RTCP）。启用组播不会关闭 TCP 和 UDP 单播。
+
+## 运行时覆盖
+
+临时测试时可覆盖部分参数，无需修改 JSON：
+
+```bash
+DARKOS_RTSP_USERNAME=admin \
+DARKOS_RTSP_PASSWORD='change-me' \
+DARKOS_RTSP_MULTICAST_ADDRESS=239.255.0.2 \
+./output/generic_ipc/bin/generic_ipc --serve --rtsp-port 9554
+```
+
+优先级为：命令行 `--rtsp-port` > RTSP 环境变量 > `app.json`。其他常用参数：
+
+```bash
 ./output/generic_ipc/bin/generic_ipc --serve \
-  --rtsp-port 8554 \
-  --storage-dir /data/generic_ipc
-```
-
-服务通过 SvcKit EventLoop 消费 Media 与 Network 事件；收到 SIGINT/SIGTERM 后
-按反向生命周期停止。编码 H.264 送往 Storage Sink，录像默认保存在输出树的
-`data/recordings/`；报警日志保存为 `data/alarms.journal`。同一视频流通过新的
-`SvcKit/protocols/rtsp` 发布，默认拉流地址为 `rtsp://127.0.0.1:8554/live`。
-遗留的 `SvcKit/protocol` 已删除；generic_ipc 只显式链接当前使用的 RTSP 协议，
-不会引入 ONVIF、GB28181 等尚未实现的协议骨架。
-
-启动时 SvcKit 会从同一输出树的 `lib/hal.host_x86.so` 加载 HAL。Application
-不直接引用 Platform HAL；Camera、Codec 和 Audio 由 SvcKit Media 管理，Wi-Fi
-由 SvcKit Network 管理，Serial 设备访问由 SvcKit Peripheral 封装。
-Application 通过 `createMediaPipeline()` 同时启动一条 320×240@15fps 的 H.264
-视频管线和一条 16kHz 单声道 G.711A 音频管线。应用将异步 Video/Audio Sink
-注册到 Pipeline，两路各收到至少 3 个编码包后停止。`libhardware` 会自动搜索可执行文件旁边的
-`../lib`，所以使用标准 `bin/lib/etc` 布局时不需要设置额外环境变量。
-
-启动过程中还会通过 SvcKit Network 输出接口、链路及地址快照，并消费 Media
-Pipeline 的 Created→Starting→Running→Stopping→Stopped 生命周期事件。网络掉线、
-网络监视错误和媒体管线失败会转换为持久化 Alarm 事件。受限容器
-若禁止 netlink，网络快照会降级为告警，不影响本地媒体探针运行。
-
-也可以使用环境变量统一替换配置目录，或分别通过命令行覆盖配置文件：
-
-```bash
-DARKOS_CONFIG_DIR=/path/to/etc ./output/generic_ipc/bin/generic_ipc
-
-./output/generic_ipc/bin/generic_ipc \
+  --app-config /path/to/app.json \
   --board-config /path/to/board.json \
-  --app-config /path/to/app.json
+  --storage-dir /path/to/data
 ```
 
-HAL 不在标准布局中时，可以覆盖 variant 和搜索目录：
+也可以用 `DARKOS_CONFIG_DIR=/path/to/etc` 同时替换默认的 `app.json` 和
+`board.json` 所在目录。HAL 不在标准输出布局中时，使用：
 
 ```bash
 DARKOS_HAL_VARIANT=host_x86 \
 DARKOS_HAL_LIBRARY_PATH=/path/to/hal/lib \
-./output/generic_ipc/bin/generic_ipc
+./output/generic_ipc/bin/generic_ipc --serve
 ```
 
-`boards/ubuntu_x86_64_host.json` 中的 `/dev/ttyS0` 和 `/dev/ttyS1` 是示例设备节点。
-接入真实串口后，应按 Ubuntu 的枚举结果改成实际的 `/dev/ttyUSB*`、
-`/dev/ttyACM*` 或其他设备节点。
-
-当前应用完成 Board/App 配置解析、Schema 校验、串口资源存在性、波特率和独占冲突
-校验，并通过 SvcKit Media 验证 Camera→Codec 视频和 Audio→G.711A 编码管线，
-同时验证编码视频落盘、索引及容量统计。
+`boards/ubuntu_x86_64_host.json` 中的 `/dev/ttyS0` 和 `/dev/ttyS1` 只是示例。
+接入真实串口时，请改成系统实际枚举出的 `/dev/ttyUSB*`、`/dev/ttyACM*` 或其他
+设备节点。

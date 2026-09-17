@@ -7,9 +7,19 @@
 
 #include "network_socket.h"
 
+#include <netinet/in.h>
+
 #include <cerrno>
 
 namespace darkos::network {
+
+int Socket::setMulticastTtl(std::uint8_t ttl) noexcept {
+  if (fd_ < 0)
+    return -EBADF;
+  return setsockopt(fd_, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) == 0
+             ? 0
+             : -errno;
+}
 
 std::ptrdiff_t Socket::sendTo(const void *data, std::size_t size,
                               const Address &destination,
