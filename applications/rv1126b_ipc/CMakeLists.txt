@@ -21,11 +21,23 @@ include("${DARKOS_SDK_PATH}/cmake/DarkOS.cmake")
 
 add_executable(rv1126b_ipc
     src/main.cpp
+    # RV1126B 使用与 generic_ipc 相同的采集、存储和 RTSP 服务编排。
+    ../generic_ipc/src/AppOptions.cpp
+    ../generic_ipc/src/CaptureService.cpp
+    ../generic_ipc/src/MediaSettings.cpp
+    ../generic_ipc/src/CameraEncodedVideo.cpp
 )
 
-target_compile_features(rv1126b_ipc PRIVATE cxx_std_17)
+target_include_directories(rv1126b_ipc PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../generic_ipc/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
-target_link_libraries(rv1126b_ipc PRIVATE DarkOS::SvcKit)
+target_compile_features(rv1126b_ipc PRIVATE cxx_std_17)
+target_compile_definitions(rv1126b_ipc PRIVATE DARKOS_CAMERA_ENCODED_MEDIA)
+
+target_link_libraries(rv1126b_ipc PRIVATE
+    DarkOS::SvcKit
+    DarkOS::Protocol::RTSP)
 
 set(DARKOS_BOARD "rv1126b_ipc_v1" CACHE STRING
     "Board configuration packaged with rv1126b_ipc")

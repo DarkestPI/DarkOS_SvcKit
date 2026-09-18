@@ -21,7 +21,7 @@
     "maximum_client_backlog_bytes": 2097152,
     "authentication": {
       "username": "admin",
-      "password": "DarkOS@123",
+      "password": "admin",
       "password_env": "DARKOS_RTSP_PASSWORD"
     },
     "multicast": {

@@ -15,8 +15,8 @@
  *   - 3A（rkaiq）已接入：start 时按 rkipc 流程初始化（对齐 SDK rkipc 的
  *     common/isp/rv1126b/isp.c：enumStaticMetas → preInit_scene →
  *     sysctl_init/prepare/start）。IQ 文件目录取环境变量
- *     DARKOS_IQ_FILE_DIR，未设置则依次探测 /oem/usr/share/iqfiles、
- *     /etc/iqfiles、/usr/share/iqfiles；找不到或传感器未上线时降级为
+ *     DARKOS_IQ_FILE_DIR，未设置则依次探测发布包的 /oem/usr2/etc/iqfiles、
+ *     /oem/usr/share/iqfiles、/etc/iqfiles、/usr/share/iqfiles；找不到或传感器未上线时降级为
  *     驱动默认调参（仅告警，不阻断采集）；
  *   - 采集回调路径为零拷贝：GetChnFrame 的 dma-buf fd 与虚拟地址在
  *     回调期间透出（frame->fd / frame->data），回调返回后
@@ -43,11 +43,13 @@
 #include <unistd.h>
 
 #include <rk_comm_vi.h>
+#include <rk_comm_venc.h>
 #include <rk_comm_video.h>
 #include <rk_comm_vo.h>
 #include <rk_mpi_mb.h>
 #include <rk_mpi_sys.h>
 #include <rk_mpi_vi.h>
+#include <rk_mpi_venc.h>
 #include <rk_mpi_vo.h>
 #include <rkaiq/uAPI2/rk_aiq_user_api2_imgproc.h>
 #include <rkaiq/uAPI2/rk_aiq_user_api2_sysctl.h>
@@ -60,6 +62,8 @@
 #define RK_VI_GET_TIMEOUT_MS 1000
 #define RK_CAM_MAX_INSTANCES 8
 #define RK_PREVIEW_SEND_TIMEOUT_MS 100 /* 预览送帧超时（VO 层缓冲满则丢帧） */
+#define RK_ENCODED_VENC_MAX_WIDTH 3840
+#define RK_ENCODED_VENC_MAX_HEIGHT 2160
 
 typedef struct rk_camera_priv {
     int idx;     /* 实例号（open id "cameraN" 的 N） */
@@ -73,6 +77,16 @@ typedef struct rk_camera_priv {
     int dev_enabled;
     int chn_enabled;
     int streaming;
+
+    /* 编码视频输出通路（与普通回调采集互斥） */
+    int encoded_dev_enabled;
+    int encoded_chn_enabled;
+    int encoded_venc_created;
+    int encoded_bound;
+    int encoded_streaming;
+    int encoded_sys_acquired;
+    int encoded_venc_chn;
+    codec_format_t encoded_cfg;
 
     /* 本地预览：独立线程 cam{N}.prv 送帧（与采集线程换手解耦，见
      * preview_start 头注）。prv_mtx/prv_cond 保护 prv_frame 换手。 */
@@ -120,10 +134,10 @@ typedef struct rk_camera_priv {
  * 3A（rkaiq）：流程对齐 SDK rkipc common/isp/rv1126b/isp.c
  * ------------------------------------------------------------------------- */
 
-/* IQ 文件目录：环境变量优先，其次按 rkipc 部署惯例探测 */
+/* IQ 文件目录：环境变量优先，其次按发布包、系统镜像的惯例探测。 */
 static const char *rk_aiq_find_iq_dir(void) {
-    static const char *candidates[] = {"/oem/usr/share/iqfiles", "/etc/iqfiles",
-                                       "/usr/share/iqfiles"};
+    static const char *candidates[] = {"/oem/usr2/etc/iqfiles", "/oem/usr/share/iqfiles",
+                                       "/etc/iqfiles", "/usr/share/iqfiles"};
     const char *env = getenv("DARKOS_IQ_FILE_DIR");
     size_t i;
 
@@ -439,7 +453,7 @@ static int rk_camera_set_format(camera_device_t *dev, const camera_format_t *fmt
         return -EINVAL;
     if (fmt->pixel_format != CAMERA_PIX_FMT_NV12)
         return -EINVAL; /* MPI VI 对上只呈现 NV12 */
-    if (priv->streaming)
+    if (priv->streaming || priv->encoded_streaming)
         return -EBUSY;
 
     priv->fmt = *fmt;
@@ -454,6 +468,245 @@ static int rk_camera_get_format(camera_device_t *dev, camera_format_t *fmt) {
     return 0;
 }
 
+/* ---------------------------------------------------------------------------
+ * 编码输出：后端使用 VI -> VENC 直连实现
+ * ------------------------------------------------------------------------- */
+
+static void rk_camera_encoded_cleanup(rk_camera_priv_t *priv) {
+    if (priv->encoded_bound) {
+        MPP_CHN_S src = {RK_ID_VI, priv->vi_pipe, priv->vi_chn};
+        MPP_CHN_S dst = {RK_ID_VENC, priv->encoded_venc_chn, 0};
+        RK_MPI_SYS_UnBind(&src, &dst);
+        priv->encoded_bound = 0;
+    }
+    if (priv->encoded_venc_created) {
+        RK_MPI_VENC_StopRecvFrame(priv->encoded_venc_chn);
+        RK_MPI_VENC_DestroyChn(priv->encoded_venc_chn);
+        priv->encoded_venc_created = 0;
+    }
+    if (priv->encoded_chn_enabled) {
+        RK_MPI_VI_DisableChn(priv->vi_pipe, priv->vi_chn);
+        priv->encoded_chn_enabled = 0;
+    }
+    if (priv->encoded_dev_enabled) {
+        RK_MPI_VI_DisableDev(priv->vi_dev);
+        priv->encoded_dev_enabled = 0;
+    }
+    rk_aiq_3a_stop(priv);
+    if (priv->encoded_sys_acquired) {
+        rk_mpi_sys_release();
+        priv->encoded_sys_acquired = 0;
+    }
+    priv->encoded_streaming = 0;
+}
+
+static int rk_camera_encoded_start(camera_device_t *dev,
+                                   const codec_format_t *config) {
+    rk_camera_priv_t *priv = (rk_camera_priv_t *)dev->priv;
+    VI_DEV_ATTR_S dev_attr;
+    VI_DEV_BIND_PIPE_S bind_pipe;
+    VI_CHN_ATTR_S chn_attr;
+    VENC_CHN_ATTR_S venc_attr;
+    VENC_RECV_PIC_PARAM_S recv;
+    MPP_CHN_S src;
+    MPP_CHN_S dst;
+    uint32_t w;
+    uint32_t h;
+    uint32_t fps;
+    uint32_t bitrate;
+    uint32_t gop;
+
+    if (config == NULL)
+        return -EINVAL;
+    if (priv->streaming || priv->encoded_streaming)
+        return -EBUSY;
+    if (config->codec != CODEC_ID_H264 ||
+        config->pixel_format != CAMERA_PIX_FMT_NV12)
+        return -EINVAL;
+
+    w = config->width;
+    h = config->height;
+    fps = config->fps != 0 ? config->fps : 30;
+    bitrate = config->bitrate_bps != 0 ? config->bitrate_bps : 8000000;
+    gop = config->gop != 0 ? config->gop : fps;
+    if (w < 128 || h < 128 || w > RK_ENCODED_VENC_MAX_WIDTH ||
+        h > RK_ENCODED_VENC_MAX_HEIGHT)
+        return -EINVAL;
+
+    priv->encoded_cfg = *config;
+    priv->encoded_cfg.fps = fps;
+    priv->encoded_cfg.bitrate_bps = bitrate;
+    priv->encoded_cfg.gop = gop;
+    priv->fmt = (camera_format_t){w, h, config->pixel_format, fps};
+
+    /* 与普通 Camera 路径相同：3A 先启动，随后取得进程级 SYS 引用。 */
+    rk_aiq_3a_start(priv);
+    if (rk_mpi_sys_acquire() != 0)
+        goto fail;
+    priv->encoded_sys_acquired = 1;
+
+    memset(&dev_attr, 0, sizeof(dev_attr));
+    if (RK_MPI_VI_GetDevAttr(priv->vi_dev, &dev_attr) != 0) {
+        if (RK_MPI_VI_SetDevAttr(priv->vi_dev, &dev_attr) != 0) {
+            fprintf(stderr, "rk_camera%d: encoded VI SetDevAttr failed\n", priv->idx);
+            goto fail;
+        }
+    }
+    if (RK_MPI_VI_GetDevIsEnable(priv->vi_dev) != 0) {
+        if (RK_MPI_VI_EnableDev(priv->vi_dev) != 0) {
+            fprintf(stderr, "rk_camera%d: encoded VI EnableDev failed\n", priv->idx);
+            goto fail;
+        }
+        memset(&bind_pipe, 0, sizeof(bind_pipe));
+        bind_pipe.u32Num = 1;
+        bind_pipe.PipeId[0] = priv->vi_pipe;
+        if (RK_MPI_VI_SetDevBindPipe(priv->vi_dev, &bind_pipe) != 0) {
+            fprintf(stderr, "rk_camera%d: encoded VI SetDevBindPipe failed\n", priv->idx);
+            RK_MPI_VI_DisableDev(priv->vi_dev);
+            goto fail;
+        }
+    }
+    priv->encoded_dev_enabled = 1;
+
+    memset(&chn_attr, 0, sizeof(chn_attr));
+    chn_attr.stIspOpt.u32BufCount = RK_VI_BUF_COUNT;
+    chn_attr.stIspOpt.enMemoryType = VI_V4L2_MEMORY_TYPE_DMABUF;
+    chn_attr.stIspOpt.stMaxSize.u32Width = w;
+    chn_attr.stIspOpt.stMaxSize.u32Height = h;
+    chn_attr.stSize.u32Width = w;
+    chn_attr.stSize.u32Height = h;
+    chn_attr.enPixelFormat = RK_FMT_YUV420SP;
+    chn_attr.u32Depth = 0; /* Bind 路径不保留用户帧队列 */
+    chn_attr.enVideoFormat = VIDEO_FORMAT_LINEAR;
+    chn_attr.enCompressMode = COMPRESS_MODE_NONE;
+    chn_attr.stFrameRate.s32SrcFrameRate = fps;
+    chn_attr.stFrameRate.s32DstFrameRate = fps;
+    if (RK_MPI_VI_SetChnAttr(priv->vi_pipe, priv->vi_chn, &chn_attr) != 0) {
+        fprintf(stderr, "rk_camera%d: encoded VI SetChnAttr failed (%ux%u)\n",
+                priv->idx, w, h);
+        goto fail;
+    }
+    if (RK_MPI_VI_EnableChn(priv->vi_pipe, priv->vi_chn) != 0) {
+        fprintf(stderr, "rk_camera%d: encoded VI EnableChn failed\n", priv->idx);
+        goto fail;
+    }
+    priv->encoded_chn_enabled = 1;
+
+    memset(&venc_attr, 0, sizeof(venc_attr));
+    venc_attr.stVencAttr.enType = RK_VIDEO_ID_AVC;
+    venc_attr.stVencAttr.enPixelFormat = RK_FMT_YUV420SP;
+    venc_attr.stVencAttr.u32Profile = H264E_PROFILE_MAIN;
+    venc_attr.stVencAttr.u32MaxPicWidth = w;
+    venc_attr.stVencAttr.u32MaxPicHeight = h;
+    venc_attr.stVencAttr.u32PicWidth = w;
+    venc_attr.stVencAttr.u32PicHeight = h;
+    venc_attr.stVencAttr.u32VirWidth = w;
+    venc_attr.stVencAttr.u32VirHeight = h;
+    venc_attr.stVencAttr.u32StreamBufCnt = 4;
+    venc_attr.stVencAttr.u32BufSize = (RK_U32)((uint64_t)w * h * 3 / 2);
+    venc_attr.stRcAttr.enRcMode = VENC_RC_MODE_H264CBR;
+    venc_attr.stRcAttr.stH264Cbr.u32Gop = gop;
+    venc_attr.stRcAttr.stH264Cbr.u32SrcFrameRateNum = fps;
+    venc_attr.stRcAttr.stH264Cbr.u32SrcFrameRateDen = 1;
+    venc_attr.stRcAttr.stH264Cbr.fr32DstFrameRateNum = fps;
+    venc_attr.stRcAttr.stH264Cbr.fr32DstFrameRateDen = 1;
+    venc_attr.stRcAttr.stH264Cbr.u32BitRate = bitrate / 1000;
+    venc_attr.stRcAttr.stH264Cbr.u32StatTime = 1;
+    venc_attr.stGopAttr.enGopMode = VENC_GOPMODE_NORMALP;
+    if (RK_MPI_VENC_CreateChn(priv->encoded_venc_chn, &venc_attr) != RK_SUCCESS) {
+        fprintf(stderr, "rk_camera%d: encoded VENC CreateChn failed (%ux%u)\n",
+                priv->idx, w, h);
+        goto fail;
+    }
+    priv->encoded_venc_created = 1;
+    memset(&recv, 0, sizeof(recv));
+    recv.s32RecvPicNum = -1;
+    if (RK_MPI_VENC_StartRecvFrame(priv->encoded_venc_chn, &recv) != RK_SUCCESS) {
+        fprintf(stderr, "rk_camera%d: encoded VENC StartRecvFrame failed\n", priv->idx);
+        goto fail;
+    }
+
+    src = (MPP_CHN_S){RK_ID_VI, priv->vi_pipe, priv->vi_chn};
+    dst = (MPP_CHN_S){RK_ID_VENC, priv->encoded_venc_chn, 0};
+    if (RK_MPI_SYS_Bind(&src, &dst) != RK_SUCCESS) {
+        fprintf(stderr, "rk_camera%d: encoded source bind failed\n", priv->idx);
+        goto fail;
+    }
+    priv->encoded_bound = 1;
+    priv->encoded_streaming = 1;
+    fprintf(stderr, "rk_camera%d: encoded camera path VI(%d,%d,%d)->VENC(%d) bound, %ux%u@%u bitrate=%u\n",
+            priv->idx, priv->vi_dev, priv->vi_pipe, priv->vi_chn,
+            priv->encoded_venc_chn, w, h, fps, bitrate);
+    return 0;
+
+fail:
+    rk_camera_encoded_cleanup(priv);
+    return -EIO;
+}
+
+static int rk_camera_encoded_get_packet(camera_device_t *dev,
+                                        codec_buffer_t *packet,
+                                        int timeout_ms) {
+    rk_camera_priv_t *priv = (rk_camera_priv_t *)dev->priv;
+    VENC_STREAM_S stream;
+    VENC_PACK_S packs[8];
+    uint32_t i;
+    uint32_t copied = 0;
+    int rc;
+
+    if (packet == NULL || packet->data == NULL || packet->size == 0)
+        return -EINVAL;
+    if (!priv->encoded_streaming)
+        return -EPIPE;
+
+    memset(&stream, 0, sizeof(stream));
+    memset(packs, 0, sizeof(packs));
+    packet->offset = 0;
+    packet->flags = 0;
+    stream.pstPack = packs;
+    rc = RK_MPI_VENC_GetStream(priv->encoded_venc_chn, &stream, timeout_ms);
+    if (rc != RK_SUCCESS)
+        return -ETIMEDOUT;
+    if (stream.u32PackCount == 0 || stream.u32PackCount > 8) {
+        RK_MPI_VENC_ReleaseStream(priv->encoded_venc_chn, &stream);
+        return -EIO;
+    }
+
+    for (i = 0; i < stream.u32PackCount; ++i) {
+        VENC_PACK_S *pack = &packs[i];
+        const uint8_t *data;
+        if (copied > packet->size || pack->u32Len > packet->size - copied) {
+            RK_MPI_VENC_ReleaseStream(priv->encoded_venc_chn, &stream);
+            return -ENOSPC;
+        }
+        data = (const uint8_t *)RK_MPI_MB_Handle2VirAddr(pack->pMbBlk);
+        if (data == NULL) {
+            RK_MPI_VENC_ReleaseStream(priv->encoded_venc_chn, &stream);
+            return -EIO;
+        }
+        memcpy((uint8_t *)packet->data + copied, data + pack->u32Offset,
+               pack->u32Len);
+        copied += pack->u32Len;
+        if (pack->DataType.enH264EType == H264E_NALU_IDRSLICE ||
+            pack->DataType.enH264EType == H264E_NALU_ISLICE)
+            packet->flags |= CODEC_BUFFER_FLAG_KEYFRAME;
+        if (i == 0)
+            packet->timestamp_ns = pack->u64PTS * 1000ull;
+    }
+    RK_MPI_VENC_ReleaseStream(priv->encoded_venc_chn, &stream);
+    packet->size = copied;
+    return 0;
+}
+
+static int rk_camera_encoded_stop(camera_device_t *dev) {
+    rk_camera_priv_t *priv = (rk_camera_priv_t *)dev->priv;
+    if (!priv->encoded_streaming && !priv->encoded_sys_acquired &&
+        !priv->encoded_venc_created)
+        return 0;
+    rk_camera_encoded_cleanup(priv);
+    return 0;
+}
+
 static int rk_camera_start(camera_device_t *dev) {
     rk_camera_priv_t *priv = (rk_camera_priv_t *)dev->priv;
     VI_DEV_ATTR_S dev_attr;
@@ -462,7 +715,7 @@ static int rk_camera_start(camera_device_t *dev) {
     int rc;
     int ret = -EIO;
 
-    if (priv->streaming)
+    if (priv->streaming || priv->encoded_streaming)
         return -EBUSY;
 
     /* 3A 先行（对齐 rkipc：rk_isp_init 在 RK_MPI_SYS_Init 之前）；
@@ -920,6 +1173,9 @@ static const camera_device_ops_t rk_camera_ops = {
     .get_control = rk_camera_get_control,
     .preview_start = rk_camera_preview_start,
     .preview_stop = rk_camera_preview_stop,
+    .encoded_start = rk_camera_encoded_start,
+    .encoded_get_packet = rk_camera_encoded_get_packet,
+    .encoded_stop = rk_camera_encoded_stop,
 };
 
 /* ---------------------------------------------------------------------------
@@ -934,6 +1190,8 @@ static int rk_camera_close(hw_device_t *device) {
         return 0;
     priv = (rk_camera_priv_t *)dev->priv;
     if (priv != NULL) {
+        if (priv->encoded_streaming || priv->encoded_venc_created)
+            rk_camera_encoded_stop((camera_device_t *)dev);
         if (priv->streaming)
             rk_camera_stop(dev); /* 内含 SYS 引用释放 */
         free(priv->nv12);
@@ -1005,6 +1263,7 @@ static int rk_camera_open(const hw_module_t *module, const char *id, hw_device_t
     priv->vi_dev = rk_camera_env_int(idx, "VI_DEV", idx);
     priv->vi_pipe = rk_camera_env_int(idx, "VI_PIPE", idx);
     priv->vi_chn = rk_camera_env_int(idx, "VI_CHN", 0);
+    priv->encoded_venc_chn = rk_camera_env_int(idx, "VENC_CHN", idx);
 
     /* 摄像头类型：DARKOS_CAMERA{idx}_TYPE=ir|white，默认白光（全彩） */
     snprintf(env_name, sizeof(env_name), "DARKOS_CAMERA%d_TYPE", idx);
@@ -1027,7 +1286,7 @@ static int rk_camera_open(const hw_module_t *module, const char *id, hw_device_t
     priv->prv_pool = MB_INVALID_POOLID;
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = CAMERA_DEVICE_API_VERSION_1_0;
+    dev->common.version = CAMERA_DEVICE_API_VERSION_1_1;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = rk_camera_close;
     dev->ops = &rk_camera_ops;

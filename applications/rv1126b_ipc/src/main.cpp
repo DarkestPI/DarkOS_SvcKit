@@ -1,3 +1,6 @@
+#include "AppOptions.h"
+#include "CaptureService.h"
+
 #include <svc_board/AppConfig.h>
 #include <svc_board/BoardConfig.h>
 #include <svc_log.h>
@@ -8,35 +11,15 @@
 namespace {
 
 constexpr char kTag[] = "rv1126b_ipc";
-constexpr char kDefaultBoardConfig[] = "/etc/board.json";
-constexpr char kDefaultAppConfig[] = "/etc/app.json";
-
-struct Options {
-    std::string boardConfig = kDefaultBoardConfig;
-    std::string appConfig = kDefaultAppConfig;
-};
-
-bool parseOptions(int argc, char **argv, Options &options) {
-    for (int index = 1; index < argc; ++index) {
-        const std::string argument = argv[index];
-        if ((argument == "--board-config" || argument == "--app-config") && index + 1 < argc) {
-            std::string &destination = argument == "--board-config" ? options.boardConfig : options.appConfig;
-            destination = argv[++index];
-        } else {
-            SVC_LOGE(kTag, "usage: %s [--board-config path] [--app-config path]", argv[0]);
-            return false;
-        }
-    }
-    return true;
-}
 
 } // namespace
 
 int main(int argc, char **argv) {
+    svc_log_set_default_level(SVC_LOG_VERBOSE);
     SVC_LOGI(kTag, "application started");
 
-    Options options;
-    if (!parseOptions(argc, argv, options))
+    generic_ipc::AppOptions options = generic_ipc::defaultAppOptions();
+    if (!generic_ipc::parseAppOptions(argc, argv, options))
         return EXIT_FAILURE;
 
     darkos::BoardConfig board;
@@ -64,6 +47,12 @@ int main(int argc, char **argv) {
                  port->device.c_str(), darkos::serialElectricalName(port->electrical), binding.baud);
     }
 
-    SVC_LOGI(kTag, "configuration validated; service wiring is ready");
-    return 0;
+    if (!options.serve) {
+        SVC_LOGI(kTag, "configuration validated; use --serve to start camera/RTSP service");
+        return EXIT_SUCCESS;
+    }
+
+    if (!generic_ipc::runCaptureService(options, app))
+        return EXIT_FAILURE;
+    return EXIT_SUCCESS;
 }

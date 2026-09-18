@@ -28,4 +28,24 @@ protected:
   AudioSource() = default;
 };
 
+/** 已编码音频生产节点。平台可直接提供 AI->AENC 等硬件访问单元。 */
+class AudioPacketSource {
+public:
+  virtual ~AudioPacketSource() = default;
+
+  AudioPacketSource(const AudioPacketSource &) = delete;
+  AudioPacketSource &operator=(const AudioPacketSource &) = delete;
+
+  using PacketHandler = std::function<void(AudioPacketPtr)>;
+  using ErrorHandler = std::function<void(int, const std::string &)>;
+
+  virtual int start(PacketHandler handler, ErrorHandler errorHandler) = 0;
+  virtual int stop() = 0;
+  virtual bool running() const noexcept = 0;
+  virtual const AudioEncoderConfig &config() const noexcept = 0;
+
+protected:
+  AudioPacketSource() = default;
+};
+
 } // namespace darkos::media

@@ -3,6 +3,10 @@
 #include "AppOptions.h"
 #include "MediaSettings.h"
 
+#ifdef DARKOS_CAMERA_ENCODED_MEDIA
+#include "CameraEncodedVideo.h"
+#endif
+
 #include <RtspServer.h>
 #include <alarm_manager.h>
 #include <base/EventLoop.h>
@@ -110,7 +114,12 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
     }
 
     const darkos::media::MediaPipelineConfig config = defaultMediaPipelineConfig();
+#ifdef DARKOS_CAMERA_ENCODED_MEDIA
+    auto encodedVideo = createCameraEncodedVideo(config.video, error);
+    auto pipeline = darkos::media::createPacketMediaPipeline(config.audio, error);
+#else
     auto pipeline = darkos::media::createMediaPipeline(config, error);
+#endif
     darkos::storage::StorageConfig storageConfig;
     storageConfig.root = options.storageDirectory / "recordings";
     storageConfig.maxBytes = 2ULL * 1024ULL * 1024ULL * 1024ULL;
@@ -159,7 +168,12 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
         rtspOptions.multicastTtl = configuredRtsp.multicast.ttl;
         rtsp = darkos::protocols::rtsp::RtspServer::create(*loop, rtspOptions, error);
     }
+#ifdef DARKOS_CAMERA_ENCODED_MEDIA
+    if (encodedVideo == nullptr || pipeline == nullptr || storage == nullptr ||
+        recorder == nullptr ||
+#else
     if (pipeline == nullptr || storage == nullptr || recorder == nullptr ||
+#endif
         (configuredRtsp.enabled && rtsp == nullptr)) {
         SVC_LOGE(kTag, "create capture/storage graph failed: %s", error.c_str());
         loop->unwatchFd(signalFd);
@@ -223,6 +237,26 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
         return false;
     }
 
+#ifdef DARKOS_CAMERA_ENCODED_MEDIA
+    if (encodedVideo->start(
+            [pipelinePtr = pipeline.get()](darkos::media::VideoPacketPtr packet) {
+                const int rc = pipelinePtr->pushVideoPacket(std::move(packet));
+                if (rc != 0 && rc != -EPIPE)
+                    SVC_LOGW(kTag, "push encoded video packet failed: %d", rc);
+            },
+            [&loop](int code, const std::string &message) {
+                SVC_LOGE(kTag, "encoded video error: %d %s", code, message.c_str());
+                loop->post([&loop] { loop->quit(); });
+            },
+            error) != 0) {
+        SVC_LOGE(kTag, "start encoded video output failed: %s", error.c_str());
+        pipeline->stop();
+        loop->unwatchFd(signalFd);
+        close(signalFd);
+        return false;
+    }
+#endif
+
     loop->scheduleEvery(100'000'000ULL, 100'000'000ULL, [&] {
         darkos::media::MediaEvent event;
         while (pipeline->waitEvent(event, 0) == 0) {
@@ -250,7 +284,13 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
         SVC_LOGI(kTag, "capture/storage service ready (RTSP disabled by app.json)");
     loop->run();
 
-    const int stopResult = pipeline->stop();
+#ifdef DARKOS_CAMERA_ENCODED_MEDIA
+    const int encodedStopResult = encodedVideo->stop();
+#else
+    const int encodedStopResult = 0;
+#endif
+    const int pipelineStopResult = pipeline->stop();
+    const int stopResult = encodedStopResult != 0 ? encodedStopResult : pipelineStopResult;
     if (networkManager != nullptr)
         networkManager->stop();
     loop->unwatchFd(signalFd);

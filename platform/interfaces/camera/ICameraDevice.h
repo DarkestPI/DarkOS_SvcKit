@@ -2,6 +2,7 @@
 #define DARKOS_HARDWARE_CAMERA_ICAMERADEVICE_H
 
 #include <camera/types.h>
+#include <codec/types.h>
 #include <hardware/hardware.h>
 
 #include <errno.h>
@@ -21,6 +22,7 @@ extern "C" {
 #define CAMERA_HARDWARE_MODULE_ID "camera"
 #define CAMERA_MODULE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
 #define CAMERA_DEVICE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
+#define CAMERA_DEVICE_API_VERSION_1_1 HARDWARE_MAKE_API_VERSION(1, 1)
 
 typedef struct camera_device camera_device_t;
 
@@ -49,6 +51,18 @@ typedef struct camera_device_ops {
      * RK_MPI_SYS_Bind 实现后删除。width/height = panel。 */
     int (*preview_start)(camera_device_t *dev, uint32_t width, uint32_t height);
     int (*preview_stop)(camera_device_t *dev);
+
+    /*
+     * 可选：摄像头直接输出编码访问单元。
+     * 后端可以在内部使用硬件直连、软件编码或其他实现；不支持时为 NULL。
+     * config/packet 复用 codec SPI 的通用数据契约。
+     * 需要 CAMERA_DEVICE_API_VERSION_1_1。
+     */
+    int (*encoded_start)(camera_device_t *dev,
+                         const codec_format_t *config);
+    int (*encoded_get_packet)(camera_device_t *dev,
+                              codec_buffer_t *packet, int timeout_ms);
+    int (*encoded_stop)(camera_device_t *dev);
 
 } camera_device_ops_t;
 
@@ -89,6 +103,15 @@ static inline int camera_open_by_id(const hw_module_t *module, const char *id,
 /* 便捷：从 module 打开 camera 设备（等价 camera_open_by_id(..., "camera", ...)） */
 static inline int camera_open(const hw_module_t *module, camera_device_t **device) {
     return camera_open_by_id(module, CAMERA_HARDWARE_MODULE_ID, device);
+}
+
+/* 可选能力查询：旧版 1.0 Camera HAL 不会访问新增 ops 表成员。 */
+static inline int camera_supports_encoded_output(const camera_device_t *device) {
+    return device != NULL &&
+           hw_device_supports(&device->common, CAMERA_DEVICE_API_VERSION_1_1) &&
+           device->ops != NULL && device->ops->encoded_start != NULL &&
+           device->ops->encoded_get_packet != NULL &&
+           device->ops->encoded_stop != NULL;
 }
 
 /* 便捷：关闭设备 */

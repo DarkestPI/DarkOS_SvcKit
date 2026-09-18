@@ -22,4 +22,9 @@ std::unique_ptr<VideoEncoder> createPlatformVideoEncoder(
 std::unique_ptr<AudioSource>
 createPlatformAudioSource(const AudioCaptureConfig &config, std::string &error);
 
+/** 创建可选的 Platform 硬件编码音频源；不支持时返回 nullptr 且不填 error。 */
+std::unique_ptr<AudioPacketSource> createPlatformAudioPacketSource(
+    const AudioCaptureConfig &capture, const AudioEncoderConfig &config,
+    std::string &error);
+
 } // namespace darkos::media

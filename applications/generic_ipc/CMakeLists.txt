@@ -22,6 +22,7 @@ include("${DARKOS_SDK_PATH}/cmake/DarkOS.cmake")
 add_executable(generic_ipc
     src/AppOptions.cpp
     src/CaptureService.cpp
+    src/CameraEncodedVideo.cpp
     src/MediaSettings.cpp
     src/Probes.cpp
     src/main.cpp

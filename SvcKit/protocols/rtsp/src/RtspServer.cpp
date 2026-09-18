@@ -257,6 +257,7 @@ struct TrackState {
   std::uint16_t sequence{0};
   std::uint32_t ssrc{0};
   std::uint32_t lastTimestamp{1};
+  bool timestampInitialized{false};
   std::uint64_t packetCount{0};
   std::uint64_t octetCount{0};
   std::uint64_t lastReportNs{0};
@@ -1046,25 +1047,15 @@ void Connection::handle(const Request &request) {
     awaitingKeyframe_ = true;
     video_.firstPacket = true;
     audio_.firstPacket = true;
-    const std::string url = presentationUrl_.empty()
-                                ? baseUrl(request.url)
-                                : presentationUrl_;
-    std::string rtpInfo;
-    if (video_.configured)
-      rtpInfo += "url=" + url + "/trackID=0;seq=" +
-                 std::to_string(video_.sequence) + ";rtptime=" +
-                 std::to_string(video_.lastTimestamp);
-    if (audio_.configured) {
-      if (!rtpInfo.empty())
-        rtpInfo += ",";
-      rtpInfo += "url=" + url + "/trackID=1;seq=" +
-                 std::to_string(audio_.sequence) + ";rtptime=" +
-                 std::to_string(audio_.lastTimestamp);
-    }
+    video_.timestampInitialized = false;
+    audio_.timestampInitialized = false;
+    // 不发送 RTP-Info 的 rtptime/seq 提示：此时首个 RTP 包尚未发出，
+    // lastTimestamp 仍是占位值，填入它会让客户端错误地重建首段 PTS。
+    // 客户端会以实际收到的第一个 RTP 包建立 live 时钟。
     respond(request, 200, "OK",
             "Session: " + session_ + ";timeout=" +
                 std::to_string(options.sessionTimeoutSeconds) +
-                "\r\nRange: npt=0.000-\r\nRTP-Info: " + rtpInfo + "\r\n");
+                "\r\nRange: npt=0.000-\r\n");
   } else if (request.method == "PAUSE") {
     if (!sessionMatches(request)) {
       respond(request, 454, "Session Not Found");
@@ -1140,9 +1131,17 @@ void Connection::sendVideo(const media::VideoPacket &packet,
     }
     awaitingKeyframe_ = false;
   }
-  video_.lastTimestamp = common::videoTimestamp90k(packet.timestampNs);
-  if (video_.lastTimestamp == 0)
-    video_.lastTimestamp = 1;
+  const std::uint32_t timestamp = common::videoTimestamp90k(packet.timestampNs);
+  if (!video_.timestampInitialized) {
+    video_.lastTimestamp = timestamp == 0 ? 1 : timestamp;
+    video_.timestampInitialized = true;
+  } else if (static_cast<std::int32_t>(timestamp - video_.lastTimestamp) >= 0) {
+    video_.lastTimestamp = timestamp == 0 ? 1 : timestamp;
+  } else {
+    // 首个 IDR 后可能还有旧 P 帧从异步队列晚到；继续发送会让 VLC
+    // 看到 PTS 回退，而且旧帧内容也不应插入当前 GOP。直接丢弃。
+    return;
+  }
   packetizer.packetize(
       packet.buffer->data(), packet.buffer->size(),
       [&](const std::uint8_t *payload, std::size_t size, bool marker) {
@@ -1154,9 +1153,17 @@ void Connection::sendVideo(const media::VideoPacket &packet,
 void Connection::sendAudio(const media::AudioPacket &packet) {
   if (!playing_ || closed_ || !audio_.configured)
     return;
-  audio_.lastTimestamp = mediaTimestamp(packet.timestampNs, packet.sampleRate);
-  if (audio_.lastTimestamp == 0)
-    audio_.lastTimestamp = 1;
+  const std::uint32_t timestamp =
+      mediaTimestamp(packet.timestampNs, packet.sampleRate);
+  if (!audio_.timestampInitialized) {
+    audio_.lastTimestamp = timestamp == 0 ? 1 : timestamp;
+    audio_.timestampInitialized = true;
+  } else if (static_cast<std::int32_t>(timestamp - audio_.lastTimestamp) >= 0) {
+    audio_.lastTimestamp = timestamp == 0 ? 1 : timestamp;
+  } else {
+    // 音频同样丢弃异步队列中晚到的旧包，避免破坏解码时钟。
+    return;
+  }
   const bool marker = audio_.firstPacket;
   if (sendRtp(audio_, kAudioPayloadType, packet.buffer->data(),
               packet.buffer->size(), marker, audio_.lastTimestamp))
@@ -1265,7 +1272,8 @@ RtspServer::create(EventLoop &eventLoop, const RtspServerOptions &options,
       options.multicastAudioPort != 0 && options.multicastAudioPort < 65535;
   if (options.mountPath.empty() ||
       options.mountPath.find('/') != std::string::npos ||
-      options.maximumRtpPayloadBytes < 3 || !credentialsValid ||
+      options.maximumRtpPayloadBytes < 3 ||
+      !credentialsValid ||
       options.authenticationRealm.find('"') != std::string::npos ||
       !audioValid || (options.enableMulticast && !multicastPortsValid)) {
     error = "invalid RTSP server options";

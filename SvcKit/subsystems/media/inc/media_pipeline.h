@@ -5,6 +5,7 @@
 #include "media_video_sink.h"
 
 #include <cstdint>
+#include <cerrno>
 #include <memory>
 #include <string>
 
@@ -33,6 +34,16 @@ public:
   virtual int removeVideoSink(SinkId id) = 0;
   virtual int removeAudioSink(SinkId id) = 0;
 
+  /**
+   * 将已经编码好的视频访问单元送入视频 Sink。
+   * 普通 Camera->Encoder 管线不接收此入口，返回 -ENOTSUP；编码视频源
+   * 用它把已经产生的访问单元交给 RTSP/录像分发。
+   */
+  virtual int pushVideoPacket(VideoPacketPtr packet) {
+    (void)packet;
+    return -ENOTSUP;
+  }
+
   virtual int start() = 0;
   /** 不应从 Sink::consume() 调用；检测到该重入时返回 -EDEADLK。 */
   virtual int stop() = 0;
@@ -52,5 +63,12 @@ createMediaPipeline(const VideoPipelineConfig &config, std::string &error);
 
 std::unique_ptr<MediaPipeline>
 createMediaPipeline(const MediaPipelineConfig &config, std::string &error);
+
+/**
+ * 创建仅接收已编码视频包的管线；音频仍由 Platform Audio 采集编码。
+ * 供摄像头/编码器后端直接提供编码访问单元的路径使用。
+ */
+std::unique_ptr<MediaPipeline>
+createPacketMediaPipeline(const AudioPipelineConfig &config, std::string &error);
 
 } // namespace darkos::media

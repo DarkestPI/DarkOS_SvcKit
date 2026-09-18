@@ -22,6 +22,7 @@ extern "C" {
 #define AUDIO_HARDWARE_MODULE_ID "audio"
 #define AUDIO_MODULE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
 #define AUDIO_DEVICE_API_VERSION_1_0 HARDWARE_MAKE_API_VERSION(1, 0)
+#define AUDIO_DEVICE_API_VERSION_1_1 HARDWARE_MAKE_API_VERSION(1, 1)
 
 /* 通用控制项 id */
 #define AUDIO_CTRL_VOLUME 1   /* 播放音量 0-100 */
@@ -49,6 +50,13 @@ typedef struct audio_device_ops {
     /* 控制项（音量/静音/增益，id 见 AUDIO_CTRL_*） */
     int (*set_control)(audio_device_t *dev, uint32_t id, int32_t value);
     int (*get_control)(audio_device_t *dev, uint32_t id, int32_t *value);
+
+    /* 可选：直接从平台编码器读取访问单元（例如 AI -> AENC）。
+     * 这些字段追加在 1.0 ops 表之后，旧 HAL 保持 ABI 兼容。 */
+    int (*encoded_start)(audio_device_t *dev, audio_encoded_config_t *config);
+    int (*encoded_stop)(audio_device_t *dev);
+    int (*encoded_read)(audio_device_t *dev, audio_encoded_buffer_t *buf,
+                        int timeout_ms);
 } audio_device_ops_t;
 
 struct audio_device {
@@ -79,6 +87,14 @@ static inline int audio_open(const hw_module_t *module, audio_device_t **device)
 
 static inline int audio_close(audio_device_t *device) {
     return device->common.close(&device->common);
+}
+
+static inline int audio_supports_encoded_output(const audio_device_t *device) {
+    return device != NULL && device->ops != NULL &&
+           hw_device_supports(&device->common, AUDIO_DEVICE_API_VERSION_1_1) &&
+           device->ops->encoded_start != NULL &&
+           device->ops->encoded_stop != NULL &&
+           device->ops->encoded_read != NULL;
 }
 
 #ifdef __cplusplus

@@ -45,6 +45,8 @@
 #define RK_CODEC_MAX_INSTANCES 8
 #define RK_RAW_POOL_CNT 2    /* encode data 路径补帧池块数 */
 #define RK_STREAM_POOL_CNT 2 /* decode 送流池块数 */
+#define RK_VENC_MAX_WIDTH 3840
+#define RK_VENC_MAX_HEIGHT 2160
 
 typedef struct rk_codec_priv {
     int idx;      /* 实例号（open id "codecN" 的 N） */
@@ -89,7 +91,7 @@ static int rk_venc_create(rk_codec_priv_t *priv) {
     memset(&attr, 0, sizeof(attr));
     attr.stVencAttr.enType = RK_VIDEO_ID_AVC;
     attr.stVencAttr.enPixelFormat = RK_FMT_YUV420SP;
-    attr.stVencAttr.u32Profile = 66; /* baseline：IPC 兼容性最好 */
+    attr.stVencAttr.u32Profile = 77; /* main：适合 1080p/4K RTSP 细节压缩 */
     attr.stVencAttr.u32MaxPicWidth = w;
     attr.stVencAttr.u32MaxPicHeight = h;
     attr.stVencAttr.u32PicWidth = w;
@@ -189,6 +191,7 @@ static int rk_codec_encode(codec_device_t *dev, const codec_buffer_t *in, codec_
     VENC_PACK_S pack;
     MB_BLK owned_blk = NULL;
     void *data;
+    int wait_ms;
     int rc;
 
     if (in == NULL || out == NULL || out->data == NULL)
@@ -204,7 +207,11 @@ static int rk_codec_encode(codec_device_t *dev, const codec_buffer_t *in, codec_
     if (rc != 0)
         return rc;
 
-    rc = RK_MPI_VENC_SendFrame(priv->venc_chn, &vf, timeout_ms);
+    /* MPI 的 GetStream 不是严格零延迟接口。上层传 0 表示不要求调用方
+     * 等待，但硬件编码完成可能晚于 SendFrame 返回；给 VENC 一个单帧内的
+     * 小窗口可避免启动首帧和偶发帧被误判为超时。 */
+    wait_ms = timeout_ms > 0 ? timeout_ms : 100;
+    rc = RK_MPI_VENC_SendFrame(priv->venc_chn, &vf, wait_ms);
     if (owned_blk != NULL)
         RK_MPI_MB_ReleaseMB(owned_blk); /* VENC 已自持引用，池块即还 */
     if (rc != RK_SUCCESS)
@@ -214,7 +221,7 @@ static int rk_codec_encode(codec_device_t *dev, const codec_buffer_t *in, codec_
     memset(&stream, 0, sizeof(stream));
     memset(&pack, 0, sizeof(pack));
     stream.pstPack = &pack;
-    if (RK_MPI_VENC_GetStream(priv->venc_chn, &stream, timeout_ms) != RK_SUCCESS)
+    if (RK_MPI_VENC_GetStream(priv->venc_chn, &stream, wait_ms) != RK_SUCCESS)
         return -ETIMEDOUT;
 
     data = (uint8_t *)RK_MPI_MB_Handle2VirAddr(pack.pMbBlk) + pack.u32Offset;
@@ -378,8 +385,8 @@ static int rk_codec_get_capabilities(codec_device_t *dev, codec_caps_t *caps) {
     memset(caps, 0, sizeof(*caps));
     caps->min_width = 128;
     caps->min_height = 128;
-    caps->max_width = 3072; /* RV1126B VENC 上限约 3K */
-    caps->max_height = 3072;
+    caps->max_width = RK_VENC_MAX_WIDTH;
+    caps->max_height = RK_VENC_MAX_HEIGHT;
     caps->supported_codecs = CODEC_CAPS_H264; /* 编解码均为 H.264 */
     return 0;
 }
@@ -393,7 +400,8 @@ static int rk_codec_set_format(codec_device_t *dev, const codec_format_t *fmt) {
         return -EINVAL; /* 当前仅实现 H.264 硬编/硬解 */
     if (fmt->pixel_format != 0x3231564e)
         return -EINVAL; /* 原始帧仅接 NV12（'NV12'，相机默认输出） */
-    if (fmt->width < 128 || fmt->height < 128 || fmt->width > 3072 || fmt->height > 3072)
+    if (fmt->width < 128 || fmt->height < 128 || fmt->width > RK_VENC_MAX_WIDTH ||
+        fmt->height > RK_VENC_MAX_HEIGHT)
         return -EINVAL;
 
     priv->fmt = *fmt;

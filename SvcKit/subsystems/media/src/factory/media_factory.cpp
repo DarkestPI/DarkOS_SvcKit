@@ -15,6 +15,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <pthread.h>
 
 namespace darkos::media {
 namespace {
@@ -395,6 +396,145 @@ private:
   std::mutex mutex_;
 };
 
+class PlatformAudioPacketSource final : public AudioPacketSource {
+public:
+  PlatformAudioPacketSource(audio_device_t *device, AudioEncoderConfig config,
+                            AudioCaptureConfig inputFormat)
+      : device_(device), config_(std::move(config)),
+        inputFormat_(std::move(inputFormat)), encodedBuffer_(64 * 1024) {}
+
+  ~PlatformAudioPacketSource() override {
+    stop();
+    audio_close(device_);
+  }
+
+  int start(PacketHandler handler, ErrorHandler errorHandler) override {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (running_.load())
+      return -EALREADY;
+    if (!handler)
+      return -EINVAL;
+
+    audio_encoded_config_t encodedConfig{};
+    encodedConfig.codec = config_.codec == AudioCodec::G711A
+                              ? AUDIO_CODEC_G711A
+                              : AUDIO_CODEC_G711U;
+    encodedConfig.sample_rate = inputFormat_.sampleRate;
+    encodedConfig.channel_count = inputFormat_.channelCount;
+    const int rc = device_->ops->encoded_start(device_, &encodedConfig);
+    if (rc != 0)
+      return rc;
+
+    if (encodedConfig.sample_rate != 0)
+      inputFormat_.sampleRate = encodedConfig.sample_rate;
+    if (encodedConfig.channel_count != 0)
+      inputFormat_.channelCount = encodedConfig.channel_count;
+    handler_ = std::move(handler);
+    errorHandler_ = std::move(errorHandler);
+    running_.store(true);
+    try {
+      thread_ = std::thread(&PlatformAudioPacketSource::captureLoop, this);
+    } catch (...) {
+      running_.store(false);
+      device_->ops->encoded_stop(device_);
+      handler_ = {};
+      errorHandler_ = {};
+      return -EAGAIN;
+    }
+    return 0;
+  }
+
+  int stop() override {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (!running_.exchange(false) && !thread_.joinable())
+      return 0;
+    if (thread_.joinable())
+      thread_.join();
+    const int rc = device_->ops->encoded_stop(device_);
+    handler_ = {};
+    errorHandler_ = {};
+    return rc;
+  }
+
+  bool running() const noexcept override { return running_.load(); }
+  const AudioEncoderConfig &config() const noexcept override { return config_; }
+
+private:
+  void captureLoop() noexcept {
+    pthread_setname_np(pthread_self(), "audio-encoded");
+    while (running_.load()) {
+      audio_encoded_buffer_t encoded{};
+      encoded.data = encodedBuffer_.data();
+      encoded.size = static_cast<std::uint32_t>(encodedBuffer_.size());
+      const int rc = device_->ops->encoded_read(device_, &encoded, 100);
+      if (!running_.load())
+        break;
+      if (rc == -EAGAIN || rc == -ETIMEDOUT)
+        continue;
+      if (rc == -ENOSPC && encoded.size > encodedBuffer_.size()) {
+        try {
+          encodedBuffer_.resize(encoded.size);
+        } catch (...) {
+          if (errorHandler_)
+            errorHandler_(-ENOMEM, "grow encoded audio buffer failed");
+          running_.store(false);
+        }
+        continue;
+      }
+      if (rc != 0) {
+        SVC_LOGE(kTag, "encoded audio packet read failed: %d", rc);
+        if (errorHandler_)
+          errorHandler_(rc, "encoded audio packet read failed");
+        running_.store(false);
+        break;
+      }
+      if (encoded.size == 0)
+        continue;
+      if (encoded.size > encodedBuffer_.size()) {
+        SVC_LOGE(kTag, "audio HAL returned an oversized encoded buffer: %u",
+                 encoded.size);
+        if (errorHandler_)
+          errorHandler_(-EOVERFLOW, "audio HAL returned an oversized buffer");
+        running_.store(false);
+        break;
+      }
+      const std::uint32_t sampleRate =
+          encoded.sample_rate != 0 ? encoded.sample_rate : inputFormat_.sampleRate;
+      const std::uint32_t channelCount = encoded.channel_count != 0
+                                             ? encoded.channel_count
+                                             : inputFormat_.channelCount;
+      auto buffer = copyMediaBuffer(encodedBuffer_.data(), encoded.size);
+      if (buffer == nullptr) {
+        if (errorHandler_)
+          errorHandler_(-ENOMEM, "copy encoded audio packet failed");
+        running_.store(false);
+        break;
+      }
+      try {
+        handler_(std::make_shared<const AudioPacket>(AudioPacket{
+            std::move(buffer), encoded.timestamp_ns, config_.codec, sampleRate,
+            channelCount}));
+      } catch (...) {
+        SVC_LOGE(kTag, "encoded audio packet dispatch failed");
+        if (errorHandler_)
+          errorHandler_(-ENOMEM, "encoded audio packet dispatch failed");
+        running_.store(false);
+        break;
+      }
+    }
+  }
+
+  audio_device_t *device_;
+  AudioEncoderConfig config_;
+  AudioCaptureConfig inputFormat_;
+  std::vector<std::uint8_t> encodedBuffer_;
+  PacketHandler handler_;
+  ErrorHandler errorHandler_;
+  std::thread thread_;
+  std::atomic<bool> running_{false};
+  std::mutex mutex_;
+};
+
 } // namespace
 
 std::unique_ptr<VideoSource>
@@ -497,7 +637,7 @@ std::unique_ptr<VideoEncoder> createPlatformVideoEncoder(
 
 std::unique_ptr<AudioSource>
 createPlatformAudioSource(const AudioCaptureConfig &config,
-                          std::string &error) {
+                         std::string &error) {
   const hw_module_t *module = nullptr;
   int rc = hw_get_module(AUDIO_HARDWARE_MODULE_ID, &module);
   if (rc != 0) {
@@ -548,6 +688,56 @@ createPlatformAudioSource(const AudioCaptureConfig &config,
   }
   return std::make_unique<PlatformAudioSource>(device, std::move(negotiated),
                                                capacity);
+}
+
+std::unique_ptr<AudioPacketSource> createPlatformAudioPacketSource(
+    const AudioCaptureConfig &capture, const AudioEncoderConfig &config,
+    std::string &error) {
+  if (config.codec != AudioCodec::G711A && config.codec != AudioCodec::G711U)
+    return nullptr;
+
+  const hw_module_t *module = nullptr;
+  int rc = hw_get_module(AUDIO_HARDWARE_MODULE_ID, &module);
+  if (rc != 0) {
+    error = failure("load audio HAL", rc);
+    return nullptr;
+  }
+  audio_device_t *device = nullptr;
+  rc = audio_open(module, &device);
+  if (rc != 0) {
+    error = failure("open audio", rc);
+    return nullptr;
+  }
+  if (device->ops == nullptr || device->ops->set_format == nullptr ||
+      device->ops->get_format == nullptr ||
+      !audio_supports_encoded_output(device)) {
+    audio_close(device);
+    return nullptr;
+  }
+
+  audio_format_t format{};
+  format.sample_rate = capture.sampleRate;
+  format.channel_count = capture.channelCount;
+  format.format = toHalAudioFormat(capture.sampleFormat);
+  rc = device->ops->set_format(device, AUDIO_DIRECTION_INPUT, &format);
+  if (rc == 0)
+    rc = device->ops->get_format(device, AUDIO_DIRECTION_INPUT, &format);
+  if (rc != 0) {
+    error = failure("negotiate encoded audio input format", rc);
+    audio_close(device);
+    return nullptr;
+  }
+  if (format.format != AUDIO_FORMAT_PCM_S16LE || format.sample_rate == 0 ||
+      format.channel_count == 0 || format.channel_count > 2) {
+    error = "encoded audio input negotiated an invalid format";
+    audio_close(device);
+    return nullptr;
+  }
+  AudioCaptureConfig negotiated = capture;
+  negotiated.sampleRate = format.sample_rate;
+  negotiated.channelCount = format.channel_count;
+  return std::make_unique<PlatformAudioPacketSource>(
+      device, config, std::move(negotiated));
 }
 
 } // namespace darkos::media

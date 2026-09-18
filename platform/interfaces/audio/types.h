@@ -60,6 +60,28 @@ typedef struct audio_buffer {
     uint64_t timestamp_ns;
 } audio_buffer_t;
 
+/* 可选的硬件编码格式。基础 Audio HAL 仍然只要求提供 PCM。 */
+typedef enum audio_codec {
+    AUDIO_CODEC_G711A = 1,
+    AUDIO_CODEC_G711U = 2,
+} audio_codec_t;
+
+/* 编码输出协商结果；输入 PCM 格式由 set_format(INPUT) 约定。 */
+typedef struct audio_encoded_config {
+    audio_codec_t codec;
+    uint32_t sample_rate;
+    uint32_t channel_count;
+} audio_encoded_config_t;
+
+/* 编码音频访问单元；data 由调用方提供，时间戳仍为单调时钟纳秒。 */
+typedef struct audio_encoded_buffer {
+    void *data;
+    uint32_t size; /* 入参为容量，返回实际码流字节数 */
+    uint64_t timestamp_ns;
+    uint32_t sample_rate;
+    uint32_t channel_count;
+} audio_encoded_buffer_t;
+
 #ifdef __cplusplus
 }
 #endif

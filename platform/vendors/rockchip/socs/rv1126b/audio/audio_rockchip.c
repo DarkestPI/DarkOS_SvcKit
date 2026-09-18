@@ -12,9 +12,8 @@
  *   - AUDIO_FRAME_S/AUDIO_STREAM_S 不直接含数据指针：读经
  *     RK_MPI_MB_Handle2VirAddr 拷出；写经 RK_MPI_SYS_CreateMB 包用户缓冲
  *     送帧后立即归还（rkipc 同款时序）；
- *   - AENC/ADEC（G.711 等压缩）不在本层：HAL 只出 PCM，压缩归服务/协议层
- *     （要做对讲码流时在 SvcKit 接 RK_MPI_AENC/ADEC，rkipc 参考：
- *     AI --bind--> AENC(G711A) / ADEC(G711A) --bind--> AO）；
+ *   - 基础 Audio HAL 仍提供 PCM；可选的 encoded ops 在本平台内部建立
+ *     AI --bind--> AENC(G.711) 链路，SvcKit 只看到通用编码音频访问单元；
  *   - 声卡默认 "default"（rockit 按 dev id 开 ALSA 卡）；USB 声卡等用
  *     环境变量 DARKOS_AUDIO_CARD（如 "hw:1,0"）覆盖；
  *   - rk730 类声卡的功放开关（AMIX "spk switch"）未做，有需要按 rkipc
@@ -31,8 +30,10 @@
 #include <string.h>
 
 #include <rk_comm_aio.h>
+#include <rk_comm_aenc.h>
 #include <rk_comm_mb.h>
 #include <rk_mpi_ai.h>
+#include <rk_mpi_aenc.h>
 #include <rk_mpi_ao.h>
 #include <rk_mpi_mb.h>
 #include <rk_mpi_sys.h>
@@ -43,14 +44,18 @@
 #define RK_AI_CHN 0
 #define RK_AO_DEV 0
 #define RK_AO_CHN 0
+#define RK_AENC_CHN 0
 #define RK_AIO_FRM_NUM 4
-#define RK_AIO_PT_PER_FRM 1024 /* 每帧采样点（AIO 推荐值之一） */
+#define RK_AIO_PT_PER_FRM 160 /* G.711 20 ms 帧；同时降低 AI 队列延迟 */
 
 typedef struct rk_audio_priv {
     audio_format_t fmt_in;
     audio_format_t fmt_out;
     int in_running;
     int out_running;
+    int encoded_running;
+    int encoded_created;
+    int encoded_bound;
     int sys_acquired;
 
     int32_t volume;   /* 播放音量 0-100 */
@@ -165,6 +170,7 @@ static int rk_audio_get_format(audio_device_t *dev, audio_direction_t dir, audio
 
 static int rk_audio_ai_start(rk_audio_priv_t *priv) {
     AIO_ATTR_S attr;
+    AI_CHN_PARAM_S chn_param;
 
     rk_audio_fill_aio_attr(&priv->fmt_in, &attr);
     if (RK_MPI_AI_SetPubAttr(RK_AI_DEV, &attr) != RK_SUCCESS) {
@@ -173,6 +179,22 @@ static int rk_audio_ai_start(rk_audio_priv_t *priv) {
     }
     if (RK_MPI_AI_Enable(RK_AI_DEV) != RK_SUCCESS) {
         fprintf(stderr, "rk_audio: AI Enable failed\n");
+        return -EIO;
+    }
+    /*
+     * Rockchip AI does not reliably create user MB frames until the channel
+     * queue policy is initialized explicitly.  The default channel settings
+     * can leave the ALSA PCM running while RK_MPI_AI_GetFrame() repeatedly
+     * reports AI_IOCTL_MB_GET fail.
+     */
+    memset(&chn_param, 0, sizeof(chn_param));
+    chn_param.s32UsrFrmDepth = RK_AIO_FRM_NUM;
+    chn_param.u32MapPtNumPerFrm = attr.u32PtNumPerFrm;
+    chn_param.enSamplerate = attr.enSamplerate;
+    chn_param.enLoopbackMode = AUDIO_LOOPBACK_NONE;
+    if (RK_MPI_AI_SetChnParam(RK_AI_DEV, RK_AI_CHN, &chn_param) != RK_SUCCESS) {
+        fprintf(stderr, "rk_audio: AI SetChnParam failed\n");
+        RK_MPI_AI_Disable(RK_AI_DEV);
         return -EIO;
     }
     if (RK_MPI_AI_EnableChn(RK_AI_DEV, RK_AI_CHN) != RK_SUCCESS) {
@@ -185,6 +207,14 @@ static int rk_audio_ai_start(rk_audio_priv_t *priv) {
     RK_MPI_AI_SetVolume(RK_AI_DEV, priv->mic_gain);
     priv->in_running = 1;
     return 0;
+}
+
+static void rk_audio_ai_stop(rk_audio_priv_t *priv) {
+    if (!priv->in_running)
+        return;
+    priv->in_running = 0;
+    RK_MPI_AI_DisableChn(RK_AI_DEV, RK_AI_CHN);
+    RK_MPI_AI_Disable(RK_AI_DEV);
 }
 
 static int rk_audio_ao_start(rk_audio_priv_t *priv) {
@@ -244,13 +274,147 @@ static int rk_audio_start(audio_device_t *dev, audio_direction_t dir) {
     return rc;
 }
 
+static int rk_audio_encoded_start(audio_device_t *dev,
+                                  audio_encoded_config_t *config) {
+    rk_audio_priv_t *priv = (rk_audio_priv_t *)dev->priv;
+    AENC_CHN_ATTR_S attr;
+    MPP_CHN_S src;
+    MPP_CHN_S dst;
+    RK_CODEC_ID_E codec;
+
+    if (config == NULL || priv->encoded_running || priv->in_running)
+        return -EBUSY;
+    if (config->codec == AUDIO_CODEC_G711A)
+        codec = RK_AUDIO_ID_PCM_ALAW;
+    else if (config->codec == AUDIO_CODEC_G711U)
+        codec = RK_AUDIO_ID_PCM_MULAW;
+    else
+        return -ENOTSUP;
+
+    if (!priv->sys_acquired) {
+        if (rk_mpi_sys_acquire() != 0)
+            return -EIO;
+        priv->sys_acquired = 1;
+    }
+    if (rk_audio_ai_start(priv) != 0)
+        goto fail_sys;
+
+    memset(&attr, 0, sizeof(attr));
+    attr.enType = codec;
+    attr.u32BufCount = RK_AIO_FRM_NUM;
+    attr.stCodecAttr.enType = codec;
+    attr.stCodecAttr.enBitwidth = AUDIO_BIT_WIDTH_16;
+    attr.stCodecAttr.u32Channels = priv->fmt_in.channel_count;
+    attr.stCodecAttr.u32SampleRate = priv->fmt_in.sample_rate;
+    attr.stCodecAttr.u32BitPerCodedSample = 8;
+    attr.stCodecAttr.u32Bitrate = priv->fmt_in.sample_rate *
+                                  priv->fmt_in.channel_count * 8u;
+    attr.u32Depth = RK_AIO_FRM_NUM;
+    attr.u32InBufCount = RK_AIO_FRM_NUM;
+    if (RK_MPI_AENC_CreateChn(RK_AENC_CHN, &attr) != RK_SUCCESS) {
+        fprintf(stderr, "rk_audio: AENC CreateChn failed (codec=%u rate=%u ch=%u)\n",
+                (unsigned)codec, priv->fmt_in.sample_rate,
+                priv->fmt_in.channel_count);
+        goto fail_ai;
+    }
+    priv->encoded_created = 1;
+
+    src = (MPP_CHN_S){RK_ID_AI, RK_AI_DEV, RK_AI_CHN};
+    dst = (MPP_CHN_S){RK_ID_AENC, RK_AENC_CHN, 0};
+    if (RK_MPI_SYS_Bind(&src, &dst) != RK_SUCCESS) {
+        fprintf(stderr, "rk_audio: AI->AENC bind failed\n");
+        goto fail_aenc;
+    }
+    priv->encoded_bound = 1;
+    priv->encoded_running = 1;
+    config->sample_rate = priv->fmt_in.sample_rate;
+    config->channel_count = priv->fmt_in.channel_count;
+    fprintf(stderr, "rk_audio: encoded audio path AI(%d,%d)->AENC(%d), codec=%u %uHz/%uch\n",
+            RK_AI_DEV, RK_AI_CHN, RK_AENC_CHN, (unsigned)codec,
+            config->sample_rate, config->channel_count);
+    return 0;
+
+fail_aenc:
+    RK_MPI_AENC_DestroyChn(RK_AENC_CHN);
+    priv->encoded_created = 0;
+fail_ai:
+    rk_audio_ai_stop(priv);
+fail_sys:
+    rk_audio_ai_stop(priv);
+    if (!priv->in_running && !priv->out_running && priv->sys_acquired) {
+        rk_mpi_sys_release();
+        priv->sys_acquired = 0;
+    }
+    return -EIO;
+}
+
+static int rk_audio_encoded_stop(audio_device_t *dev) {
+    rk_audio_priv_t *priv = (rk_audio_priv_t *)dev->priv;
+    MPP_CHN_S src;
+    MPP_CHN_S dst;
+
+    if (!priv->encoded_running && !priv->encoded_created)
+        return 0;
+    src = (MPP_CHN_S){RK_ID_AI, RK_AI_DEV, RK_AI_CHN};
+    dst = (MPP_CHN_S){RK_ID_AENC, RK_AENC_CHN, 0};
+    if (priv->encoded_bound) {
+        RK_MPI_SYS_UnBind(&src, &dst);
+        priv->encoded_bound = 0;
+    }
+    if (priv->encoded_created) {
+        RK_MPI_AENC_DestroyChn(RK_AENC_CHN);
+        priv->encoded_created = 0;
+    }
+    priv->encoded_running = 0;
+    rk_audio_ai_stop(priv);
+    if (!priv->in_running && !priv->out_running && priv->sys_acquired) {
+        rk_mpi_sys_release();
+        priv->sys_acquired = 0;
+    }
+    return 0;
+}
+
+static int rk_audio_encoded_read(audio_device_t *dev,
+                                 audio_encoded_buffer_t *buf,
+                                 int timeout_ms) {
+    rk_audio_priv_t *priv = (rk_audio_priv_t *)dev->priv;
+    AUDIO_STREAM_S stream;
+    const void *data;
+
+    if (buf == NULL || buf->data == NULL || buf->size == 0)
+        return -EINVAL;
+    if (!priv->encoded_running)
+        return -EINVAL;
+
+    memset(&stream, 0, sizeof(stream));
+    if (RK_MPI_AENC_GetStream(RK_AENC_CHN, &stream, timeout_ms) != RK_SUCCESS)
+        return -ETIMEDOUT;
+    data = RK_MPI_MB_Handle2VirAddr(stream.pMbBlk);
+    if (data == NULL) {
+        RK_MPI_AENC_ReleaseStream(RK_AENC_CHN, &stream);
+        return -EIO;
+    }
+    if (stream.u32Len > buf->size) {
+        buf->size = stream.u32Len;
+        RK_MPI_AENC_ReleaseStream(RK_AENC_CHN, &stream);
+        return -ENOSPC;
+    }
+    memcpy(buf->data, data, stream.u32Len);
+    buf->size = stream.u32Len;
+    buf->timestamp_ns = stream.u64TimeStamp * 1000ull;
+    buf->sample_rate = priv->fmt_in.sample_rate;
+    buf->channel_count = priv->fmt_in.channel_count;
+    RK_MPI_AENC_ReleaseStream(RK_AENC_CHN, &stream);
+    return 0;
+}
+
 static int rk_audio_stop(audio_device_t *dev, audio_direction_t dir) {
     rk_audio_priv_t *priv = (rk_audio_priv_t *)dev->priv;
 
     if (dir == AUDIO_DIRECTION_INPUT && priv->in_running) {
-        priv->in_running = 0;
-        RK_MPI_AI_DisableChn(RK_AI_DEV, RK_AI_CHN);
-        RK_MPI_AI_Disable(RK_AI_DEV);
+        if (priv->encoded_running)
+            return -EBUSY;
+        rk_audio_ai_stop(priv);
     }
     if (dir == AUDIO_DIRECTION_OUTPUT && priv->out_running) {
         priv->out_running = 0;
@@ -389,6 +553,9 @@ static const audio_device_ops_t rk_audio_ops = {
     .write = rk_audio_write,
     .set_control = rk_audio_set_control,
     .get_control = rk_audio_get_control,
+    .encoded_start = rk_audio_encoded_start,
+    .encoded_stop = rk_audio_encoded_stop,
+    .encoded_read = rk_audio_encoded_read,
 };
 
 /* ---------------------------------------------------------------------------
@@ -403,6 +570,7 @@ static int rk_audio_close(hw_device_t *device) {
         return 0;
     priv = (rk_audio_priv_t *)dev->priv;
     if (priv != NULL) {
+        rk_audio_encoded_stop((audio_device_t *)dev);
         rk_audio_stop(dev, AUDIO_DIRECTION_INPUT);
         rk_audio_stop(dev, AUDIO_DIRECTION_OUTPUT);
         free(priv);
@@ -435,7 +603,7 @@ static int rk_audio_open(const hw_module_t *module, const char *id, hw_device_t 
     priv->mic_gain = 50;
 
     dev->common.tag = HARDWARE_DEVICE_TAG;
-    dev->common.version = AUDIO_DEVICE_API_VERSION_1_0;
+    dev->common.version = AUDIO_DEVICE_API_VERSION_1_1;
     dev->common.module = (hw_module_t *)module;
     dev->common.close = rk_audio_close;
     dev->ops = &rk_audio_ops;
