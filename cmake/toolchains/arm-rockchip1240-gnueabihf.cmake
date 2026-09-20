@@ -26,6 +26,12 @@ set(DARKOS_RV1126B_MEDIA_ROOT
     "${DARKOS_RV1126B_SDK}/output/out/media_out"
     CACHE PATH "RV1126B 媒体库根目录（include + lib）")
 
+# RV1126B 的 RKNN C API 与 ARMhf Runtime。Rockchip Platform HAL 会从这个
+# 目录查找 include/rknn_api.h 和 Linux/armhf/librknnrt.so，并导出 inference SPI。
+set(DARKOS_RV1126B_RKNN_ROOT
+    "${DARKOS_RV1126B_SDK}/project/app/testdemo/yoloworld_demo/3rdparty/rknpu2"
+    CACHE PATH "RV1126B RKNN SDK 根目录")
+
 # ------------------------------------------------------------
 # 交叉编译器
 # ------------------------------------------------------------

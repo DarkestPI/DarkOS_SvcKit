@@ -83,9 +83,7 @@ mk_source "$ROOT/src/model/model_manager.cpp" "模型管理实现"       "iva_mo
 
 # ---------- inference ----------
 mk_source "$ROOT/src/inference/cpu_engine.cpp"  "CPU 推理引擎"     "iva_inference.h"
-mk_source "$ROOT/src/inference/rknn_engine.cpp" "瑞芯微 RKNN 推理引擎" "iva_inference.h"
-mk_source "$ROOT/src/inference/nnie_engine.cpp" "海思 NNIE 推理引擎"   "iva_inference.h"
-mk_source "$ROOT/src/inference/onnx_engine.cpp" "ONNX Runtime 推理引擎" "iva_inference.h"
+mk_source "$ROOT/src/inference/platform_engine.cpp" "Platform 推理 HAL 适配器" "iva_inference.h"
 
 # ---------- algorithm / traditional ----------
 mk_source "$ROOT/src/algorithm/traditional/motion_algorithm.cpp" "移动侦测算法"   "iva_algorithm.h"

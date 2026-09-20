@@ -38,6 +38,8 @@ AppOptions defaultAppOptions() {
         options.rtspPasswordOverride = value;
     if (const char *value = std::getenv("DARKOS_RTSP_MULTICAST_ADDRESS"); value && value[0] != '\0')
         options.rtspMulticastAddressOverride = value;
+    if (const char *value = std::getenv("DARKOS_IVA_MODEL"); value && value[0] != '\0')
+        options.ivaModelPath = value;
     return options;
 }
 
@@ -47,6 +49,8 @@ bool parseAppOptions(int argc, char **argv, AppOptions &options) {
         if ((argument == "--board-config" || argument == "--app-config") && index + 1 < argc) {
             std::string &destination = argument == "--board-config" ? options.boardConfig : options.appConfig;
             destination = argv[++index];
+        } else if (argument == "--iva-model" && index + 1 < argc) {
+            options.ivaModelPath = argv[++index];
         } else if (argument == "--serve") {
             options.serve = true;
         } else if (argument == "--storage-dir" && index + 1 < argc) {
@@ -62,7 +66,8 @@ bool parseAppOptions(int argc, char **argv, AppOptions &options) {
         } else {
             SVC_LOGE(kTag,
                      "usage: %s [--board-config path] [--app-config path] "
-                     "[--storage-dir path] [--serve] [--rtsp-port port]",
+                     "[--storage-dir path] [--iva-model path] [--serve] "
+                     "[--rtsp-port port]",
                      argv[0]);
             return false;
         }

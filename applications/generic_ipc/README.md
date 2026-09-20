@@ -72,6 +72,35 @@ ffplay -rtsp_transport udp \
 ./output/generic_ipc/bin/generic_ipc
 ```
 
+## IVA 平台推理示例
+
+Ubuntu 使用 `hal.host_x86.so` 中的 inference Mock HAL 验证调用生命周期，不执行真实
+NPU 推理，也不会产生检测框。传入任意非空模型路径即可观察“加载模型 → 提交 NV12 帧
+→ 输出解码 → IVA Manager”的完整调用：
+
+也可以直接写入 `output/generic_ipc/etc/app.json`，程序启动时自动执行：
+
+```json
+"iva": {
+  "enabled": true,
+  "model_path": "/tmp/example.model"
+}
+```
+
+```bash
+touch /tmp/example.model
+DARKOS_HAL_VARIANT=host_x86 \
+DARKOS_HAL_LIBRARY_PATH="$PWD/output/generic_ipc/lib" \
+DARKOS_CONFIG_DIR="$PWD/output/generic_ipc/etc" \
+./output/generic_ipc/bin/generic_ipc --iva-model /tmp/example.model
+```
+
+`--iva-model` 或 `DARKOS_IVA_MODEL` 会覆盖 `app.json` 中的模型路径，适合临时联调。
+
+示例解码器会明确打印 `Platform inference returned 0 tensor(s)`。接入真实模型时，保留
+`IvaExample` 的平台调用方式，只需要在应用侧替换为对应模型的 Tensor 解码、置信度过滤
+和 NMS 逻辑；模型厂商 SDK 不应进入 SvcKit。
+
 ## RTSP 配置
 
 RTSP 参数统一放在 `applications/generic_ipc/etc/app.json`：

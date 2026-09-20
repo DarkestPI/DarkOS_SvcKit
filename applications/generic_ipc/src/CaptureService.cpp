@@ -33,6 +33,24 @@ namespace {
 
 constexpr char kTag[] = "generic_ipc";
 
+const char *networkEventTypeName(darkos::network::NetworkEventType type) {
+    switch (type) {
+    case darkos::network::NetworkEventType::LinkChanged:
+        return "LinkChanged";
+    case darkos::network::NetworkEventType::InterfaceAdded:
+        return "InterfaceAdded";
+    case darkos::network::NetworkEventType::InterfaceRemoved:
+        return "InterfaceRemoved";
+    case darkos::network::NetworkEventType::AddressAdded:
+        return "AddressAdded";
+    case darkos::network::NetworkEventType::AddressRemoved:
+        return "AddressRemoved";
+    case darkos::network::NetworkEventType::Error:
+        return "Error";
+    }
+    return "Unknown";
+}
+
 } // namespace
 
 bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) {
@@ -90,8 +108,9 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
     auto networkManager = darkos::network::NetworkManager::create(*loop, error);
     if (networkManager != nullptr) {
         const int result = networkManager->start([&](const darkos::network::NetworkEvent &event) {
-            SVC_LOGI(kTag, "network event: type=%u interface=%s address=%s up=%d running=%d code=%d",
-                     static_cast<unsigned>(event.type), event.interfaceName.c_str(), event.address.c_str(), event.up,
+            SVC_LOGI(kTag,
+                     "network event: type=%s interface=%s address=%s admin_up=%d link_running=%d code=%d",
+                     networkEventTypeName(event.type), event.interfaceName.c_str(), event.address.c_str(), event.up,
                      event.running, event.code);
             if ((event.type == darkos::network::NetworkEventType::LinkChanged && !event.up) ||
                 event.type == darkos::network::NetworkEventType::Error) {

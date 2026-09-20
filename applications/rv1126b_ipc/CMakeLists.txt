@@ -24,6 +24,7 @@ add_executable(rv1126b_ipc
     # RV1126B 使用与 generic_ipc 相同的采集、存储和 RTSP 服务编排。
     ../generic_ipc/src/AppOptions.cpp
     ../generic_ipc/src/CaptureService.cpp
+    ../generic_ipc/src/IvaExample.cpp
     ../generic_ipc/src/MediaSettings.cpp
     ../generic_ipc/src/CameraEncodedVideo.cpp
 )
@@ -38,6 +39,15 @@ target_compile_definitions(rv1126b_ipc PRIVATE DARKOS_CAMERA_ENCODED_MEDIA)
 target_link_libraries(rv1126b_ipc PRIVATE
     DarkOS::SvcKit
     DarkOS::Protocol::RTSP)
+
+# 运行时库随 output/bin 一起发布到 output/lib；不要把开发机 SDK 的绝对路径
+# 写进板端程序的运行时搜索路径。
+if(DARKOS_ENABLE_OUTPUT_LAYOUT)
+    set_target_properties(rv1126b_ipc PROPERTIES
+        BUILD_RPATH "$ORIGIN/../lib"
+        INSTALL_RPATH "$ORIGIN/../lib"
+        BUILD_WITH_INSTALL_RPATH TRUE)
+endif()
 
 set(DARKOS_BOARD "rv1126b_ipc_v1" CACHE STRING
     "Board configuration packaged with rv1126b_ipc")

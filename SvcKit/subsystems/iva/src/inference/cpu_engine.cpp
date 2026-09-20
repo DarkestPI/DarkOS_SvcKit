@@ -7,6 +7,14 @@
 
 #include "iva_inference.h"
 
+#include <cerrno>
+
 namespace iva {
+
+std::unique_ptr<InferenceEngine>
+createCpuInferenceEngine(std::string &error) {
+  error = "CPU inference backend is reserved for a future software model runtime";
+  return nullptr;
+}
 
 } // namespace iva

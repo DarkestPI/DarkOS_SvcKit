@@ -95,6 +95,10 @@ void testValidConfiguration(const TemporaryDirectory &temporary) {
           "audio_port": 6002,
           "ttl": 8
         }
+      },
+      "iva": {
+        "enabled": true,
+        "model_path": "/oem/usr2/etc/models/person.rknn"
       }
     })json");
 
@@ -134,6 +138,8 @@ void testValidConfiguration(const TemporaryDirectory &temporary) {
   CHECK(app.rtsp().multicast.videoPort == 6000);
   CHECK(app.rtsp().multicast.audioPort == 6002);
   CHECK(app.rtsp().multicast.ttl == 8);
+  CHECK(app.iva().enabled);
+  CHECK(app.iva().modelPath == "/oem/usr2/etc/models/person.rknn");
 }
 
 void testSemanticFailures(const TemporaryDirectory &temporary) {
@@ -237,6 +243,15 @@ void testSyntaxAndSchemaFailures(const TemporaryDirectory &temporary) {
     })json");
   CHECK(!darkos::AppConfig::load(unknownRtspMember, app, error));
   CHECK(error.find("unknown member") != std::string::npos);
+
+  const std::string enabledWithoutModel =
+      temporary.write("iva-without-model.json", R"json({
+      "schema_version": "0.0.1",
+      "serial_bindings": {},
+      "iva": {"enabled": true}
+    })json");
+  CHECK(!darkos::AppConfig::load(enabledWithoutModel, app, error));
+  CHECK(error.find("model_path") != std::string::npos);
 }
 
 } // namespace

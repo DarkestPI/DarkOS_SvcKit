@@ -8,6 +8,7 @@ INTERFACE 库（`DarkOS::<pkg>` / 聚合 `hardware_interfaces`），实现侧
 ├── audio           # 音频采集/播放（ALSA，语音对讲）
 ├── bluetooth       # 蓝牙功能
 ├── camera          # 视频输入 VI/ISP
+├── inference       # NPU/CPU 推理设备
 ├── display         # 显示器输出
 ├── gnss            # 定位（GPS/北斗等）
 ├── graphics        # 2D 加速 合成

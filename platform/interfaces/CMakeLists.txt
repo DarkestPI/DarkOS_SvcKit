@@ -4,6 +4,7 @@
 set(HAL_INTERFACE_PACKAGES
     camera      # 视频输入 VI/ISP
     codec       # 编解码
+    inference   # NPU/CPU 推理设备 SPI
     graphics    # 2D 加速/合成
     display     # 显示输出（VO，本地预览/回放）
     audio       # 音频采集/播放（语音对讲）

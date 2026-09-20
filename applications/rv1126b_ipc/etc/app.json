@@ -31,5 +31,9 @@
       "audio_port": 5006,
       "ttl": 16
     }
+  },
+  "iva": {
+    "enabled": true,
+    "model_path": "/oem/usr2/etc/models/model.int8.320x240.rv1126b.rknn"
   }
 }

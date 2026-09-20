@@ -5,8 +5,25 @@
  * @date 2026-09-16
  */
 
-#include "iva_manager.h"
+#include "iva_inference.h"
 
 namespace iva {
+
+std::unique_ptr<InferenceEngine> createCpuInferenceEngine(std::string &error);
+std::unique_ptr<InferenceEngine>
+createPlatformInferenceEngine(const InferenceEngineConfig &config,
+                              std::string &error);
+
+std::unique_ptr<InferenceEngine>
+createInferenceEngine(const InferenceEngineConfig &config, std::string &error) {
+  switch (config.backend) {
+  case InferenceBackend::Software:
+    return createCpuInferenceEngine(error);
+  case InferenceBackend::Platform:
+    return createPlatformInferenceEngine(config, error);
+  }
+  error = "unknown IVA inference backend";
+  return nullptr;
+}
 
 } // namespace iva

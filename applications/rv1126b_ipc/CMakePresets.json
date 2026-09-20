@@ -17,6 +17,7 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "DARKOS_BUILD_HAL_IMPLEMENTATIONS": "ON",
+        "DARKOS_ENABLE_RV1126B_RKNN": "ON",
         "DARKOS_PLATFORM": "auto",
         "DARKOS_VENDOR": "rockchip",
         "DARKOS_SOC": "rv1126b",

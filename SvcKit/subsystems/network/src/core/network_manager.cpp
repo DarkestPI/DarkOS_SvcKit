@@ -56,6 +56,8 @@ public:
     if (!callback)
       return -EINVAL;
     callback_ = std::move(callback);
+    // 每次重新 start 都重新观察接口，避免把上一次生命周期的状态带入本次。
+    linkStates_.clear();
     running_ = true;
     if (!rearm()) {
       running_ = false;
@@ -143,14 +145,31 @@ private:
 
   void parseLink(const nlmsghdr *header) {
     const auto *info = static_cast<const ifinfomsg *>(NLMSG_DATA(header));
+    const auto index = static_cast<std::uint32_t>(info->ifi_index);
+    const std::string name = interfaceName(index);
+    const bool up = (info->ifi_flags & IFF_UP) != 0;
+    const bool running = (info->ifi_flags & IFF_RUNNING) != 0;
+
+    if (header->nlmsg_type == RTM_NEWLINK) {
+      const auto current = linkStates_.find(index);
+      if (current != linkStates_.end() && current->second.name == name &&
+          current->second.up == up && current->second.running == running) {
+        // Wi-Fi 驱动可能周期性发送完全相同的 RTM_NEWLINK；对外只报告真实变化。
+        return;
+      }
+      linkStates_[index] = LinkState{name, up, running};
+    } else {
+      linkStates_.erase(index);
+    }
+
     NetworkEvent event;
     event.type = header->nlmsg_type == RTM_DELLINK
                      ? NetworkEventType::InterfaceRemoved
                      : NetworkEventType::LinkChanged;
-    event.interfaceIndex = static_cast<std::uint32_t>(info->ifi_index);
-    event.interfaceName = interfaceName(event.interfaceIndex);
-    event.up = (info->ifi_flags & IFF_UP) != 0;
-    event.running = (info->ifi_flags & IFF_RUNNING) != 0;
+    event.interfaceIndex = index;
+    event.interfaceName = name;
+    event.up = up;
+    event.running = running;
     publish(std::move(event));
   }
 
@@ -180,6 +199,12 @@ private:
   EventLoop &loop_;
   int fd_{-1};
   EventCallback callback_;
+  struct LinkState {
+    std::string name;
+    bool up{false};
+    bool running{false};
+  };
+  std::map<std::uint32_t, LinkState> linkStates_;
   bool running_{false};
 };
 

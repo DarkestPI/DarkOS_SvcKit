@@ -42,6 +42,17 @@ struct RtspAppConfig {
   RtspMulticastConfig multicast;
 };
 
+/*
+ * IVA 应用配置。
+ *
+ * 这里只保存业务层的“是否启用”和模型路径；HAL 变体、HAL 搜索目录以及
+ * LD_LIBRARY_PATH 仍属于平台部署环境，不混入 app.json。
+ */
+struct IvaAppConfig {
+  bool enabled{false};
+  std::string modelPath;
+};
+
 class AppConfig {
 public:
   static bool load(const std::string &path, AppConfig &output,
@@ -57,11 +68,13 @@ public:
   const SerialBinding *
   findSerialBinding(const std::string &service) const noexcept;
   const RtspAppConfig &rtsp() const noexcept { return rtsp_; }
+  const IvaAppConfig &iva() const noexcept { return iva_; }
 
 private:
   std::string schemaVersion_;
   std::unordered_map<std::string, SerialBinding> serialBindings_;
   RtspAppConfig rtsp_;
+  IvaAppConfig iva_;
 };
 
 } // namespace darkos

@@ -23,6 +23,7 @@ add_executable(generic_ipc
     src/AppOptions.cpp
     src/CaptureService.cpp
     src/CameraEncodedVideo.cpp
+    src/IvaExample.cpp
     src/MediaSettings.cpp
     src/Probes.cpp
     src/main.cpp

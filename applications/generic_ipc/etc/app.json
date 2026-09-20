@@ -31,5 +31,9 @@
       "audio_port": 5006,
       "ttl": 16
     }
+  },
+  "iva": {
+    "enabled": false,
+    "model_path": "/opt/darkos/models/example.model"
   }
 }

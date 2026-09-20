@@ -253,6 +253,25 @@ bool parseRtsp(const cJSON *object, RtspAppConfig &config,
   return true;
 }
 
+bool parseIva(const cJSON *object, IvaAppConfig &config,
+              std::string &error) {
+  if (!cJSON_IsObject(object)) {
+    error = "'iva' must be an object";
+    return false;
+  }
+  if (!checkMembers(object, {"enabled", "model_path"}, "iva configuration",
+                    error))
+    return false;
+  if (!readOptionalBool(object, "enabled", config.enabled, error) ||
+      !readOptionalString(object, "model_path", config.modelPath, error))
+    return false;
+  if (config.enabled && config.modelPath.empty()) {
+    error = "iva configuration requires a non-empty 'model_path' when enabled";
+    return false;
+  }
+  return true;
+}
+
 bool checkMembers(const cJSON *object,
                   const std::unordered_set<std::string> &allowed,
                   const std::string &context, std::string &error) {
@@ -304,7 +323,8 @@ bool AppConfig::load(const std::string &path, AppConfig &output,
     error = "application configuration root must be an object";
     return false;
   }
-  if (!checkMembers(root.get(), {"schema_version", "serial_bindings", "rtsp"},
+  if (!checkMembers(root.get(),
+                    {"schema_version", "serial_bindings", "rtsp", "iva"},
                     "application configuration", error))
     return false;
 
@@ -365,6 +385,10 @@ bool AppConfig::load(const std::string &path, AppConfig &output,
 
   const cJSON *rtsp = cJSON_GetObjectItemCaseSensitive(root.get(), "rtsp");
   if (rtsp != nullptr && !parseRtsp(rtsp, parsed.rtsp_, error))
+    return false;
+
+  const cJSON *iva = cJSON_GetObjectItemCaseSensitive(root.get(), "iva");
+  if (iva != nullptr && !parseIva(iva, parsed.iva_, error))
     return false;
 
   output = std::move(parsed);

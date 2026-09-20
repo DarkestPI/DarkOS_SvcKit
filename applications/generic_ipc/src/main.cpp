@@ -1,5 +1,6 @@
 #include "AppOptions.h"
 #include "CaptureService.h"
+#include "IvaExample.h"
 #include "Probes.h"
 
 #include <svc_board/AppConfig.h>
@@ -7,6 +8,7 @@
 #include <svc_log.h>
 
 #include <cstdlib>
+#include <optional>
 #include <string>
 
 namespace {
@@ -41,6 +43,15 @@ int main(int argc, char **argv) {
         SVC_LOGE(kTag, "configuration binding error: %s", error.c_str());
         return EXIT_FAILURE;
     }
+
+    const std::optional<std::string> ivaModelPath =
+        options.ivaModelPath.has_value()
+            ? options.ivaModelPath
+            : (app.iva().enabled
+                   ? std::optional<std::string>(app.iva().modelPath)
+                   : std::nullopt);
+    if (ivaModelPath && !generic_ipc::runIvaExample(*ivaModelPath))
+        return EXIT_FAILURE;
 
     // 4. 输出最终生效的板卡信息和串口绑定，便于定位部署配置问题。
     SVC_LOGI(kTag, "board=%s soc=%s serial_ports=%zu", board.boardId().c_str(), board.compatibleSoc().c_str(),

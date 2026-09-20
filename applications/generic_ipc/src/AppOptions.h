@@ -11,6 +11,7 @@ struct AppOptions {
     std::string boardConfig;
     std::string appConfig;
     std::filesystem::path storageDirectory;
+    std::optional<std::string> ivaModelPath;
     bool serve{false};
     std::optional<std::uint16_t> rtspPortOverride;
     std::optional<std::string> rtspUsernameOverride;

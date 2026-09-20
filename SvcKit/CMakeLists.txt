@@ -25,6 +25,7 @@ target_link_libraries(darkos_svckit INTERFACE
     svckit_peripheral
     svckit_storage
     svckit_alarm
+    svckit_iva
     DarkOS::Platform
 )
 add_library(DarkOS::SvcKit ALIAS darkos_svckit)

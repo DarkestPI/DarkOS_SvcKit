@@ -1,11 +1,13 @@
 #include "AppOptions.h"
 #include "CaptureService.h"
+#include "IvaExample.h"
 
 #include <svc_board/AppConfig.h>
 #include <svc_board/BoardConfig.h>
 #include <svc_log.h>
 
 #include <cstdlib>
+#include <optional>
 #include <string>
 
 namespace {
@@ -37,6 +39,15 @@ int main(int argc, char **argv) {
         SVC_LOGE(kTag, "configuration binding error: %s", error.c_str());
         return EXIT_FAILURE;
     }
+
+    const std::optional<std::string> ivaModelPath =
+        options.ivaModelPath.has_value()
+            ? options.ivaModelPath
+            : (app.iva().enabled
+                   ? std::optional<std::string>(app.iva().modelPath)
+                   : std::nullopt);
+    if (ivaModelPath && !generic_ipc::runIvaExample(*ivaModelPath))
+        return EXIT_FAILURE;
 
     SVC_LOGI(kTag, "board=%s soc=%s serial_ports=%zu", board.boardId().c_str(), board.compatibleSoc().c_str(),
              board.serialPorts().size());

@@ -11,6 +11,9 @@ add_subdirectory(media)
 add_subdirectory(storage)
 add_subdirectory(alarm)
 add_subdirectory(network)
+add_subdirectory(iva)
+
+target_link_libraries(svckit_analytics INTERFACE svckit_iva)
 
 target_link_libraries(svckit_audio INTERFACE DarkOS::audio)
 
@@ -21,3 +24,4 @@ add_library(DarkOS::Media ALIAS svckit_media)
 add_library(DarkOS::Networking ALIAS svckit_networking)
 add_library(DarkOS::Storage ALIAS svckit_storage)
 add_library(DarkOS::Alarm ALIAS svckit_alarm)
+add_library(DarkOS::IVA ALIAS svckit_iva)
