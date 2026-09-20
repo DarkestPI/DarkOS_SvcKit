@@ -20,14 +20,17 @@ endif()
 include("${DARKOS_SDK_PATH}/cmake/DarkOS.cmake")
 
 add_executable(generic_ipc
-    src/AppOptions.cpp
-    src/CaptureService.cpp
-    src/CameraEncodedVideo.cpp
-    src/IvaExample.cpp
-    src/MediaSettings.cpp
+    ../common_ipc/src/AppOptions.cpp
+    ../common_ipc/src/CaptureService.cpp
+    ../common_ipc/src/CameraEncodedVideo.cpp
+    ../common_ipc/src/IvaExample.cpp
+    ../common_ipc/src/MediaSettings.cpp
     src/Probes.cpp
     src/main.cpp
 )
+
+target_include_directories(generic_ipc PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../common_ipc/src")
 
 target_compile_features(generic_ipc PRIVATE cxx_std_17)
 

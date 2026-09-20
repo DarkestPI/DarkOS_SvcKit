@@ -27,11 +27,11 @@
 #include <sys/signalfd.h>
 #include <unistd.h>
 
-namespace generic_ipc {
+namespace common_ipc {
 
 namespace {
 
-constexpr char kTag[] = "generic_ipc";
+constexpr char kTag[] = "ipc_service";
 
 const char *networkEventTypeName(darkos::network::NetworkEventType type) {
     switch (type) {
@@ -338,4 +338,4 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
     return stopResult == 0;
 }
 
-} // namespace generic_ipc
+} // namespace common_ipc

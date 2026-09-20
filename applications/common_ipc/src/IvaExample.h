@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace generic_ipc {
+namespace common_ipc {
 
 /**
  * 运行一次 IVA Platform 推理示例。
@@ -13,4 +13,4 @@ namespace generic_ipc {
  */
 bool runIvaExample(const std::string &modelPath);
 
-} // namespace generic_ipc
+} // namespace common_ipc

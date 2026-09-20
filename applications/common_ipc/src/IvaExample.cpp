@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace generic_ipc {
+namespace common_ipc {
 namespace {
 
 constexpr char kTag[] = "iva_example";
@@ -83,4 +83,4 @@ bool runIvaExample(const std::string &modelPath) {
     return true;
 }
 
-} // namespace generic_ipc
+} // namespace common_ipc

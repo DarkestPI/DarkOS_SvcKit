@@ -1,7 +1,7 @@
 
 # RV1126B IPC Application
 
-本项目在启动时读取两类 JSON 配置，并可启动与 `generic_ipc` 相同的摄像头、编码视频
+本项目在启动时读取两类 JSON 配置，并可启动与 Ubuntu 参考应用共享编排层的摄像头、编码视频
 Rockchip `VI -> VENC` 硬件直连、存储和 RTSP 服务：
 
 - `boards/<board>.json`：板级硬件资源清单；

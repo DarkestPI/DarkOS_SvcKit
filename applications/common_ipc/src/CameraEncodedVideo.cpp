@@ -10,7 +10,7 @@
 #include <limits>
 #include <utility>
 
-namespace generic_ipc {
+namespace common_ipc {
 namespace {
 
 constexpr char kTag[] = "camera_encoded_video";
@@ -178,4 +178,4 @@ createCameraEncodedVideo(const darkos::media::VideoPipelineConfig &config,
         new CameraEncodedVideo(device, config));
 }
 
-} // namespace generic_ipc
+} // namespace common_ipc

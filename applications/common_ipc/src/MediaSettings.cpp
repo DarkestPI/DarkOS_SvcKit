@@ -1,6 +1,6 @@
 #include "MediaSettings.h"
 
-namespace generic_ipc {
+namespace common_ipc {
 
 darkos::media::MediaPipelineConfig defaultMediaPipelineConfig() {
     darkos::media::MediaPipelineConfig config;
@@ -32,4 +32,4 @@ darkos::media::MediaPipelineConfig defaultMediaPipelineConfig() {
     return config;
 }
 
-} // namespace generic_ipc
+} // namespace common_ipc

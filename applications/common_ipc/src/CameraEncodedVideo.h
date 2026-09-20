@@ -13,7 +13,7 @@
 #include <thread>
 #include <vector>
 
-namespace generic_ipc {
+namespace common_ipc {
 
 class CameraEncodedVideo final {
 public:
@@ -54,4 +54,4 @@ std::unique_ptr<CameraEncodedVideo>
 createCameraEncodedVideo(const darkos::media::VideoPipelineConfig &config,
                          std::string &error);
 
-} // namespace generic_ipc
+} // namespace common_ipc

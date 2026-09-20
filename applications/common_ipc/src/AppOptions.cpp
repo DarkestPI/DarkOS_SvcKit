@@ -6,11 +6,11 @@
 #include <system_error>
 #include <unistd.h>
 
-namespace generic_ipc {
+namespace common_ipc {
 
 namespace {
 
-constexpr char kTag[] = "generic_ipc";
+constexpr char kTag[] = "common_ipc";
 
 std::filesystem::path defaultConfigDirectory() {
     if (const char *configured = std::getenv("DARKOS_CONFIG_DIR"); configured && configured[0] != '\0')
@@ -75,4 +75,4 @@ bool parseAppOptions(int argc, char **argv, AppOptions &options) {
     return true;
 }
 
-} // namespace generic_ipc
+} // namespace common_ipc

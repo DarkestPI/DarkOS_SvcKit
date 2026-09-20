@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 
-namespace generic_ipc {
+namespace common_ipc {
 
 struct AppOptions {
     std::string boardConfig;
@@ -22,4 +22,4 @@ struct AppOptions {
 AppOptions defaultAppOptions();
 bool parseAppOptions(int argc, char **argv, AppOptions &options);
 
-} // namespace generic_ipc
+} // namespace common_ipc

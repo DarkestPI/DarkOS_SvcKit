@@ -20,8 +20,8 @@ int main(int argc, char **argv) {
     svc_log_set_default_level(SVC_LOG_VERBOSE);
     SVC_LOGI(kTag, "application started");
 
-    generic_ipc::AppOptions options = generic_ipc::defaultAppOptions();
-    if (!generic_ipc::parseAppOptions(argc, argv, options))
+    common_ipc::AppOptions options = common_ipc::defaultAppOptions();
+    if (!common_ipc::parseAppOptions(argc, argv, options))
         return EXIT_FAILURE;
 
     darkos::BoardConfig board;
@@ -46,7 +46,7 @@ int main(int argc, char **argv) {
             : (app.iva().enabled
                    ? std::optional<std::string>(app.iva().modelPath)
                    : std::nullopt);
-    if (ivaModelPath && !generic_ipc::runIvaExample(*ivaModelPath))
+    if (ivaModelPath && !common_ipc::runIvaExample(*ivaModelPath))
         return EXIT_FAILURE;
 
     SVC_LOGI(kTag, "board=%s soc=%s serial_ports=%zu", board.boardId().c_str(), board.compatibleSoc().c_str(),
@@ -63,7 +63,7 @@ int main(int argc, char **argv) {
         return EXIT_SUCCESS;
     }
 
-    if (!generic_ipc::runCaptureService(options, app))
+    if (!common_ipc::runCaptureService(options, app))
         return EXIT_FAILURE;
     return EXIT_SUCCESS;
 }

@@ -37,7 +37,7 @@ bool probeNetworkState() {
 }
 
 bool runMediaPipelineProbe(const std::filesystem::path &storageDirectory) {
-    const darkos::media::MediaPipelineConfig config = defaultMediaPipelineConfig();
+    const darkos::media::MediaPipelineConfig config = common_ipc::defaultMediaPipelineConfig();
     std::string error;
     auto pipeline = darkos::media::createMediaPipeline(config, error);
     if (pipeline == nullptr) {

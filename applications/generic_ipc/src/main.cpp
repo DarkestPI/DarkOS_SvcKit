@@ -23,8 +23,8 @@ int main(int argc, char **argv) {
     SVC_LOGI(kTag, "application started");
 
     // 2. 建立默认路径和环境变量覆盖，再解析命令行参数。
-    generic_ipc::AppOptions options = generic_ipc::defaultAppOptions();
-    if (!generic_ipc::parseAppOptions(argc, argv, options))
+    common_ipc::AppOptions options = common_ipc::defaultAppOptions();
+    if (!common_ipc::parseAppOptions(argc, argv, options))
         return EXIT_FAILURE;
 
     // 3. 加载板级资源和应用配置，并校验应用绑定的硬件资源。
@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
             : (app.iva().enabled
                    ? std::optional<std::string>(app.iva().modelPath)
                    : std::nullopt);
-    if (ivaModelPath && !generic_ipc::runIvaExample(*ivaModelPath))
+    if (ivaModelPath && !common_ipc::runIvaExample(*ivaModelPath))
         return EXIT_FAILURE;
 
     // 4. 输出最终生效的板卡信息和串口绑定，便于定位部署配置问题。
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
 
     // 6. --serve 进入常驻采集服务；默认模式执行一次自检后退出。
     const bool succeeded = options.serve
-                               ? generic_ipc::runCaptureService(options, app)
+                               ? common_ipc::runCaptureService(options, app)
                                : generic_ipc::runMediaPipelineProbe(options.storageDirectory);
     if (!succeeded)
         return EXIT_FAILURE;

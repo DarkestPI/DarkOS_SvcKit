@@ -21,16 +21,16 @@ include("${DARKOS_SDK_PATH}/cmake/DarkOS.cmake")
 
 add_executable(rv1126b_ipc
     src/main.cpp
-    # RV1126B 使用与 generic_ipc 相同的采集、存储和 RTSP 服务编排。
-    ../generic_ipc/src/AppOptions.cpp
-    ../generic_ipc/src/CaptureService.cpp
-    ../generic_ipc/src/IvaExample.cpp
-    ../generic_ipc/src/MediaSettings.cpp
-    ../generic_ipc/src/CameraEncodedVideo.cpp
+    # 这里复用跨平台的应用编排层；具体摄像头/编码/推理仍由 Platform HAL 提供。
+    ../common_ipc/src/AppOptions.cpp
+    ../common_ipc/src/CaptureService.cpp
+    ../common_ipc/src/IvaExample.cpp
+    ../common_ipc/src/MediaSettings.cpp
+    ../common_ipc/src/CameraEncodedVideo.cpp
 )
 
 target_include_directories(rv1126b_ipc PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/../generic_ipc/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../common_ipc/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 target_compile_features(rv1126b_ipc PRIVATE cxx_std_17)

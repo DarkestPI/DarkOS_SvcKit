@@ -4,10 +4,10 @@ namespace darkos {
 class AppConfig;
 }
 
-namespace generic_ipc {
+namespace common_ipc {
 
 struct AppOptions;
 
 bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app);
 
-} // namespace generic_ipc
+} // namespace common_ipc
