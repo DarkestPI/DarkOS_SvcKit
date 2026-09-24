@@ -71,4 +71,8 @@ createMediaPipeline(const MediaPipelineConfig &config, std::string &error);
 std::unique_ptr<MediaPipeline>
 createPacketMediaPipeline(const AudioPipelineConfig &config, std::string &error);
 
+/** 创建只接收已编码视频包的管线，不打开 Platform Audio。 */
+std::unique_ptr<MediaPipeline>
+createVideoPacketMediaPipeline(std::string &error);
+
 } // namespace darkos::media

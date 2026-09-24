@@ -47,9 +47,17 @@ if(NOT resolved_vendor AND
    (DEFINED DARKOS_RV1126B_SDK OR DEFINED DARKOS_RV1126B_MEDIA_ROOT))
     set(resolved_vendor rockchip)
 endif()
+if(NOT resolved_vendor AND
+   (DEFINED DARKOS_VS816_SDK OR DEFINED DARKOS_VS816_MEDIA_ROOT))
+    set(resolved_vendor visinextek)
+endif()
 if(resolved_vendor STREQUAL "rockchip" AND NOT resolved_soc AND
    (DEFINED DARKOS_RV1126B_SDK OR DEFINED DARKOS_RV1126B_MEDIA_ROOT))
     set(resolved_soc rv1126b)
+endif()
+if(resolved_vendor STREQUAL "visinextek" AND NOT resolved_soc AND
+   (DEFINED DARKOS_VS816_SDK OR DEFINED DARKOS_VS816_MEDIA_ROOT))
+    set(resolved_soc vs816)
 endif()
 
 if(resolved_vendor)

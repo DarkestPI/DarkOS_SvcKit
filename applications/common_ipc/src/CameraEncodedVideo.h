@@ -16,10 +16,20 @@
 
 namespace common_ipc {
 
-class CameraEncodedVideo final {
+class EncodedVideoSource {
 public:
     using PacketHandler = std::function<void(darkos::media::VideoPacketPtr)>;
     using ErrorHandler = std::function<void(int, const std::string &)>;
+
+    virtual ~EncodedVideoSource() = default;
+    virtual int start(PacketHandler packetHandler, ErrorHandler errorHandler,
+                      std::string &error) = 0;
+    virtual int startPreview(std::string &error) = 0;
+    virtual int stop() = 0;
+};
+
+class CameraEncodedVideo final : public EncodedVideoSource {
+public:
 
     ~CameraEncodedVideo();
 
@@ -27,13 +37,13 @@ public:
     CameraEncodedVideo &operator=(const CameraEncodedVideo &) = delete;
 
     int start(PacketHandler packetHandler, ErrorHandler errorHandler,
-              std::string &error);
+              std::string &error) override;
     /* 启动平台本地预览：应用层只请求，VI/VO 通道由 Camera/Display HAL 建立。 */
-    int startPreview(std::string &error);
-    int stop();
+    int startPreview(std::string &error) override;
+    int stop() override;
 
 private:
-    friend std::unique_ptr<CameraEncodedVideo>
+    friend std::unique_ptr<EncodedVideoSource>
     createCameraEncodedVideo(const darkos::media::VideoPipelineConfig &config,
                              std::string &error);
 
@@ -55,7 +65,7 @@ private:
     bool timestampInitialized_{false};
 };
 
-std::unique_ptr<CameraEncodedVideo>
+std::unique_ptr<EncodedVideoSource>
 createCameraEncodedVideo(const darkos::media::VideoPipelineConfig &config,
                          std::string &error);
 

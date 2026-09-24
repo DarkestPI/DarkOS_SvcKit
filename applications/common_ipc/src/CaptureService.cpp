@@ -135,7 +135,11 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
     const darkos::media::MediaPipelineConfig config = defaultMediaPipelineConfig();
 #ifdef DARKOS_CAMERA_ENCODED_MEDIA
     auto encodedVideo = createCameraEncodedVideo(config.video, error);
+#ifdef DARKOS_VIDEO_ONLY_MEDIA
+    auto pipeline = darkos::media::createVideoPacketMediaPipeline(error);
+#else
     auto pipeline = darkos::media::createPacketMediaPipeline(config.audio, error);
+#endif
 #else
     auto pipeline = darkos::media::createMediaPipeline(config, error);
 #endif
@@ -175,6 +179,11 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
                 rtspOptions.password = password;
             }
         }
+#ifdef DARKOS_VIDEO_ONLY_MEDIA
+        rtspOptions.enableAudio = false;
+#else
+        rtspOptions.enableAudio = true;
+#endif
         rtspOptions.audioCodec = config.audio.encoder.codec;
         rtspOptions.audioSampleRate = config.audio.capture.sampleRate;
         rtspOptions.audioChannelCount = config.audio.capture.channelCount;
@@ -239,9 +248,15 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
     }
     if (rtsp != nullptr) {
         darkos::media::SinkId rtspVideoId = 0;
+        int attachResult = pipeline->addVideoSink(
+            rtsp, {32, darkos::media::BackpressurePolicy::DropOldest}, rtspVideoId);
+#ifndef DARKOS_VIDEO_ONLY_MEDIA
         darkos::media::SinkId rtspAudioId = 0;
-        if (pipeline->addVideoSink(rtsp, {32, darkos::media::BackpressurePolicy::DropOldest}, rtspVideoId) != 0 ||
-            pipeline->addAudioSink(rtsp, {64, darkos::media::BackpressurePolicy::DropOldest}, rtspAudioId) != 0) {
+        if (attachResult == 0)
+            attachResult = pipeline->addAudioSink(
+                rtsp, {64, darkos::media::BackpressurePolicy::DropOldest}, rtspAudioId);
+#endif
+        if (attachResult != 0) {
             SVC_LOGE(kTag, "attach RTSP audio/video sink failed");
             loop->unwatchFd(signalFd);
             close(signalFd);

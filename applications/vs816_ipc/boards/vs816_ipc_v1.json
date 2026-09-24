@@ -1,0 +1,6 @@
+{
+  "schema_version": "0.0.1",
+  "board": "vs816_ipc_v1",
+  "compatible_soc": "visinextek_vs816",
+  "serial_ports": {}
+}

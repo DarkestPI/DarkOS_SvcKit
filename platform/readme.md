@@ -15,9 +15,12 @@ platform/
 │   ├── gpio/gpio_sysfs.c             legacy sysfs GPIO
 │   └── serial/serial_termios.c        termios/RS-485 串口
 ├── vendors/
-│   └── rockchip/
-│       ├── common/                   Rockchip SoC 间可复用的 Rockit 辅助代码
-│       └── socs/rv1126b/             RV1126B Camera/Media/Audio/Display 等实现
+│   ├── rockchip/
+│   │   ├── common/                   Rockchip SoC 间可复用的 Rockit 辅助代码
+│   │   └── socs/rv1126b/             RV1126B Camera/Media/Audio/Display 等实现
+│   └── visinextek/
+│       ├── common/                   VS SYS/VB 进程级生命周期
+│       └── socs/vs816/               VS816 Camera/Codec/Light 实现
 └── ubuntu_x86_64/                    Ubuntu 主机参考/模拟 HAL
 ```
 
@@ -53,14 +56,26 @@ cmake -S . -B build \
 RV1126B 工具链变量存在时可以自动识别 vendor 和 SoC。旧的
 `DARKOS_PLATFORM=rockchip` 暂时兼容，但已弃用。
 
-当前已登记的 vendor 有 `rockchip`、`allwinner`、`artosyn`、`gokemicro`、
-`ingenic`、`novatek`、`sunplus`；只有 Rockchip/RV1126B 已提供实现。登记不等于
-实现，选择尚未实现的 vendor 时 CMake 会明确报错。
+VS816 使用配套发布包和工具链：
+
+```bash
+cmake -S . -B build-vs816 \
+    -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/aarch64-visinextek-linux-gnu.cmake \
+    -DDARKOS_BUILD_HAL_IMPLEMENTATIONS=ON \
+    -DDARKOS_VENDOR=visinextek \
+    -DDARKOS_SOC=vs816
+cmake --build build-vs816 --target hal_visinextek_vs816 -j
+```
+
+当前已提供实现的组合是 Rockchip/RV1126B 和 Visinextek/VS816（后者当前覆盖
+Camera、Codec、Light、Serial）。其他已登记 vendor 仅表示可选择的命名空间；
+选择尚未实现的组合时 CMake 会明确报错。
 
 ## 插件命名与加载
 
 - Ubuntu x86_64：`hal.host_x86.so`
 - Rockchip RV1126B：`hal.rockchip.rv1126b.so`
+- Visinextek VS816：`hal.visinextek.vs816.so`
 
 Application 不直接链接插件。`hw_get_module("camera")` 会读取
 `DARKOS_HAL_VARIANT`，查找 `hal.<variant>.so`，再通过 `dlsym("HMI_camera")`

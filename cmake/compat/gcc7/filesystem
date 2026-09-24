@@ -1,0 +1,10 @@
+#pragma once
+
+/* GCC 7 ships the C++17 filesystem implementation under experimental/.  The
+ * VS816 SDK is fixed to GCC 7.5, so present the standard spelling used by
+ * DarkOS while retaining the vendor toolchain ABI. */
+#include <experimental/filesystem>
+
+namespace std {
+namespace filesystem = experimental::filesystem;
+}

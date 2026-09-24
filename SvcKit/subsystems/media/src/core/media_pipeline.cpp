@@ -725,8 +725,9 @@ public:
     encodedAudioQueue_.reset();
     accepting_.store(true);
 
+    const bool hasAudio = audioSource_ != nullptr || audioPacketSource_ != nullptr;
     int rc = 0;
-    if (audioPacketSource_ == nullptr) {
+    if (audioSource_ != nullptr && audioPacketSource_ == nullptr) {
       rc = audioEncoder_ != nullptr ? audioEncoder_->start() : -ENOTSUP;
       if (rc != 0)
         return failStart(rc, "audio_encoder");
@@ -737,15 +738,17 @@ public:
     if (rc != 0)
       return failStart(rc, "video_fanout");
     videoFanoutStarted_ = true;
-    rc = audioFanout_.start();
-    if (rc != 0)
-      return failStart(rc, "audio_fanout");
-    audioFanoutStarted_ = true;
+    if (hasAudio) {
+      rc = audioFanout_.start();
+      if (rc != 0)
+        return failStart(rc, "audio_fanout");
+      audioFanoutStarted_ = true;
 
-    try {
-      audioWorker_ = std::thread(&PacketMediaPipeline::audioEncodeLoop, this);
-    } catch (...) {
-      return failStart(-EAGAIN, "audio_encode_worker");
+      try {
+        audioWorker_ = std::thread(&PacketMediaPipeline::audioEncodeLoop, this);
+      } catch (...) {
+        return failStart(-EAGAIN, "audio_encode_worker");
+      }
     }
 
     if (audioPacketSource_ != nullptr) {
@@ -1105,6 +1108,13 @@ createPacketMediaPipeline(const AudioPipelineConfig &config, std::string &error)
   return std::make_unique<PacketMediaPipeline>(
       std::move(audioSource), std::move(audioEncoder), nullptr,
       config.inputQueue);
+}
+
+std::unique_ptr<MediaPipeline>
+createVideoPacketMediaPipeline(std::string &error) {
+  error.clear();
+  return std::make_unique<PacketMediaPipeline>(
+      nullptr, nullptr, nullptr, MediaQueueConfig{});
 }
 
 } // namespace darkos::media
