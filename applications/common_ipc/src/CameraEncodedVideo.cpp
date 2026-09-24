@@ -79,11 +79,80 @@ int CameraEncodedVideo::start(PacketHandler packetHandler,
     return 0;
 }
 
+int CameraEncodedVideo::startPreview(std::string &error) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (previewStarted_)
+        return 0;
+    if (!running_.load()) {
+        error = "encoded camera output is not running";
+        return -EINVAL;
+    }
+    if (device_->ops->preview_start == nullptr ||
+        device_->ops->preview_stop == nullptr) {
+        error = "camera HAL does not provide local preview output";
+        return -ENOTSUP;
+    }
+
+    const hw_module_t *module = nullptr;
+    int rc = hw_get_module(DISPLAY_HARDWARE_MODULE_ID, &module);
+    if (rc != 0) {
+        error = "load display HAL failed (" + std::to_string(rc) + ")";
+        return rc;
+    }
+
+    display_device_t *display = nullptr;
+    rc = display_open(module, &display);
+    if (rc != 0) {
+        error = "open display failed (" + std::to_string(rc) + ")";
+        return rc;
+    }
+
+    display_format_t requested{};
+    requested.pixel_format = DISPLAY_FMT_NV12;
+    requested.intf = DISPLAY_INTF_MIPI;
+    requested.fps = config_.capture.fps;
+    rc = display->ops->set_format(display, &requested);
+    if (rc == 0)
+        rc = display->ops->start(display);
+    display_format_t panel{};
+    if (rc == 0)
+        rc = display->ops->get_format(display, &panel);
+    if (rc != 0 || panel.width == 0 || panel.height == 0) {
+        if (rc == 0)
+            rc = -EIO;
+        error = "start display output failed (" + std::to_string(rc) + ")";
+        if (display->ops->stop != nullptr)
+            display->ops->stop(display);
+        display_close(display);
+        return rc;
+    }
+
+    rc = device_->ops->preview_start(device_, panel.width, panel.height);
+    if (rc != 0) {
+        error = "start camera preview output failed (" + std::to_string(rc) + ")";
+        display->ops->stop(display);
+        display_close(display);
+        return rc;
+    }
+
+    displayDevice_ = display;
+    previewStarted_ = true;
+    SVC_LOGI(kTag, "local preview started: panel=%ux%u", panel.width, panel.height);
+    return 0;
+}
+
 int CameraEncodedVideo::stop() {
     const std::lock_guard<std::mutex> lock(mutex_);
     running_.store(false);
     if (thread_.joinable())
         thread_.join();
+    if (previewStarted_) {
+        device_->ops->preview_stop(device_);
+        displayDevice_->ops->stop(displayDevice_);
+        display_close(displayDevice_);
+        displayDevice_ = nullptr;
+        previewStarted_ = false;
+    }
     const int rc = camera_supports_encoded_output(device_)
                        ? device_->ops->encoded_stop(device_)
                        : 0;

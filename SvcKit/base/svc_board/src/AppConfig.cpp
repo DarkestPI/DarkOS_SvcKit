@@ -272,6 +272,17 @@ bool parseIva(const cJSON *object, IvaAppConfig &config,
   return true;
 }
 
+bool parseDisplay(const cJSON *object, DisplayAppConfig &config,
+                  std::string &error) {
+  if (!cJSON_IsObject(object)) {
+    error = "'display' must be an object";
+    return false;
+  }
+  if (!checkMembers(object, {"enabled"}, "display configuration", error))
+    return false;
+  return readOptionalBool(object, "enabled", config.enabled, error);
+}
+
 bool checkMembers(const cJSON *object,
                   const std::unordered_set<std::string> &allowed,
                   const std::string &context, std::string &error) {
@@ -324,7 +335,8 @@ bool AppConfig::load(const std::string &path, AppConfig &output,
     return false;
   }
   if (!checkMembers(root.get(),
-                    {"schema_version", "serial_bindings", "rtsp", "iva"},
+                    {"schema_version", "serial_bindings", "rtsp", "iva",
+                     "display"},
                     "application configuration", error))
     return false;
 
@@ -389,6 +401,11 @@ bool AppConfig::load(const std::string &path, AppConfig &output,
 
   const cJSON *iva = cJSON_GetObjectItemCaseSensitive(root.get(), "iva");
   if (iva != nullptr && !parseIva(iva, parsed.iva_, error))
+    return false;
+
+  const cJSON *display =
+      cJSON_GetObjectItemCaseSensitive(root.get(), "display");
+  if (display != nullptr && !parseDisplay(display, parsed.display_, error))
     return false;
 
   output = std::move(parsed);

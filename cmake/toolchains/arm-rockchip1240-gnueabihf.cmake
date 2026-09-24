@@ -88,7 +88,10 @@ set(DARKOS_COMMON_COMPILE_FLAGS
     "-ffunction-sections -fdata-sections ${RV1126B_ARCH_FLAGS}")
 
 set(CMAKE_C_FLAGS_INIT "${DARKOS_COMMON_COMPILE_FLAGS}")
-set(CMAKE_CXX_FLAGS_INIT "${DARKOS_COMMON_COMPILE_FLAGS}")
+# GCC 在 ARM C++ 标准库模板展开时会输出历史 ABI 参数传递提示
+#（-Wpsabi）。工程统一使用同一套 GCC/sysroot，不存在实际 ABI 混用；
+# 这里只关闭这类工具链提示，不影响业务代码的诊断选项。
+set(CMAKE_CXX_FLAGS_INIT "${DARKOS_COMMON_COMPILE_FLAGS} -Wno-psabi")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-Wl,--gc-sections")
 
 set(CMAKE_C_FLAGS_DEBUG

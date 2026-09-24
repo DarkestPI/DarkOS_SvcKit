@@ -1,6 +1,7 @@
 #pragma once
 
 #include <camera/ICameraDevice.h>
+#include <display/IDisplay.h>
 #include <media_buffer.h>
 #include <media_types.h>
 
@@ -27,6 +28,8 @@ public:
 
     int start(PacketHandler packetHandler, ErrorHandler errorHandler,
               std::string &error);
+    /* 启动平台本地预览：应用层只请求，VI/VO 通道由 Camera/Display HAL 建立。 */
+    int startPreview(std::string &error);
     int stop();
 
 private:
@@ -46,6 +49,8 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
     std::mutex mutex_;
+    display_device_t *displayDevice_{nullptr};
+    bool previewStarted_{false};
     std::uint64_t lastTimestampNs_{0};
     bool timestampInitialized_{false};
 };

@@ -53,6 +53,16 @@ struct IvaAppConfig {
   std::string modelPath;
 };
 
+/*
+ * 本地显示配置。
+ *
+ * enabled 只表示应用是否请求平台建立 Camera->Display 预览；VO 设备、
+ * layer、旋转和 panel 时序属于 Platform HAL，由具体 SoC 适配层决定。
+ */
+struct DisplayAppConfig {
+  bool enabled{false};
+};
+
 class AppConfig {
 public:
   static bool load(const std::string &path, AppConfig &output,
@@ -69,12 +79,14 @@ public:
   findSerialBinding(const std::string &service) const noexcept;
   const RtspAppConfig &rtsp() const noexcept { return rtsp_; }
   const IvaAppConfig &iva() const noexcept { return iva_; }
+  const DisplayAppConfig &display() const noexcept { return display_; }
 
 private:
   std::string schemaVersion_;
   std::unordered_map<std::string, SerialBinding> serialBindings_;
   RtspAppConfig rtsp_;
   IvaAppConfig iva_;
+  DisplayAppConfig display_;
 };
 
 } // namespace darkos

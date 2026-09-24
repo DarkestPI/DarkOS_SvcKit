@@ -3,7 +3,7 @@
  *
  * 把 hardware/interfaces/display 的抽象接口映射到 rockit MPI VO：
  *   start → VO SetPubAttr（接口类型 + 默认时序）→ Enable → 回读 panel
- *           时序 → video layer（NV12）→ 全屏 chn
+ *           时序 → graphic layer（RGA 接收 NV12 并转出）→ 全屏 chn
  *   show  → SendFrame 送一帧（priv 携 MB_BLK 时零拷贝，否则池内拷贝）
  *   stop  → 逆序回收
  *
@@ -16,11 +16,11 @@
  *   - panel 时序用 VO_OUTPUT_DEFAULT 交驱动，Enable 后 GetPubAttr 回读
  *     stSyncInfo.u16Hact/u16Vact；回读为 0（未接屏等）用请求宽高兜底；
  *     VO Enable 失败（未接屏/无显示硬件）直接报错，由上层降级；
- *   - 默认 dev=0 / layer=0 / MIPI，可用环境变量 DARKOS_VO_DEV /
- *     DARKOS_VO_LAYER 覆盖（板型相关，参考 rkipc rv1126b_ipc 的
- *     vo_dev_id/vo_layer_id 配置项）；
- *   - 未做 CSC/旋转/RGA splice（rkipc 竖屏 panel 的 ROTATION_270 等），
- *     有具体屏时按需补 set_control。
+ *   - SDK 示例默认 dev=3，但当前 RV1126B IPC50 实物板的 DSI 映射为 dev=0；
+ *     可用环境变量 DARKOS_VO_DEV / DARKOS_VO_LAYER 覆盖（板型相关，参考
+ *     rkipc rv1126b_ipc 的 vo_dev_id/vo_layer_id 配置项）；
+ *   - Camera HAL 建立 VI->VO 预览时负责设置 RGA splice 和 panel 旋转；
+ *     Display HAL 只负责 VO dev/layer 的生命周期，避免两个适配层重复抢占资源。
  */
 
 #include <display/IDisplay.h>
@@ -118,7 +118,7 @@ static int rk_display_set_format(display_device_t *dev, const display_format_t *
     if (fmt == NULL)
         return -EINVAL;
     if (fmt->pixel_format != DISPLAY_FMT_NV12)
-        return -EINVAL; /* video layer 直送仅接 NV12 */
+        return -EINVAL; /* 当前输入链路统一为 NV12，由 RGA 负责显示侧转换 */
 
     pthread_mutex_lock(&g_vo_mtx);
     if (g_vo_refcount > 0) {
@@ -161,7 +161,7 @@ static int rk_vo_bringup(rk_display_priv_t *priv) {
     pub.enIntfType = rk_vo_intf_map(priv->fmt.intf);
     pub.enIntfSync = VO_OUTPUT_DEFAULT; /* panel 时序交驱动 */
     if (RK_MPI_VO_SetPubAttr(priv->vo_dev, &pub) != RK_SUCCESS) {
-        fprintf(stderr, "rk_display: VO SetPubAttr failed\n");
+        fprintf(stderr, "rk_display: VO SetPubAttr failed, dev=%d\n", priv->vo_dev);
         goto out_sys;
     }
     if (RK_MPI_VO_Enable(priv->vo_dev) != RK_SUCCESS) {
@@ -182,17 +182,20 @@ static int rk_vo_bringup(rk_display_priv_t *priv) {
     g_panel_w = w;
     g_panel_h = h;
 
-    /* 视频层显示缓冲深度 3（对齐 rkipc dv：VO 内部队列平滑帧回收，
-     * 默认深度下 VO 持帧偏久，预览源端池块周转不开） */
-    RK_MPI_VO_SetLayerDispBufLen(priv->vo_layer, 3);
+    /* 预览优先低延迟：2 帧足够覆盖 VO/RGA 的回收抖动，3 帧会额外积压
+     * 一帧以上的历史画面，肉眼看起来就是“卡着追不上”。 */
+    RK_MPI_VO_SetLayerDispBufLen(priv->vo_layer, 2);
 
     memset(&layer_attr, 0, sizeof(layer_attr));
     layer_attr.stDispRect = (RECT_S){0, 0, w, h};
     layer_attr.stImageSize = (SIZE_S){w, h};
     layer_attr.u32DispFrmRt = priv->fmt.fps ? priv->fmt.fps : 30;
-    layer_attr.enPixFormat = RK_FMT_YUV420SP;
+    /* RV1126B SDK 的 MIPI VI->VO 参考链路使用 graphic layer；配合 RGA
+     * 可接收 VI 的 NV12 帧并完成颜色转换/旋转，video layer 在该板上会
+     * 出现明显掉帧。 */
+    layer_attr.enPixFormat = RK_FMT_RGB888;
     layer_attr.enCompressMode = COMPRESS_MODE_NONE;
-    if (RK_MPI_VO_BindLayer(priv->vo_layer, priv->vo_dev, VO_LAYER_MODE_VIDEO) != RK_SUCCESS) {
+    if (RK_MPI_VO_BindLayer(priv->vo_layer, priv->vo_dev, VO_LAYER_MODE_GRAPHIC) != RK_SUCCESS) {
         fprintf(stderr, "rk_display: VO BindLayer failed\n");
         goto out_dev;
     }
@@ -201,6 +204,7 @@ static int rk_vo_bringup(rk_display_priv_t *priv) {
      * VO_PREV_LAYER_PRIORITY=0 / VO_UI_LAYER_PRIORITY=1） */
     RK_MPI_VO_SetLayerPriority(priv->vo_layer, 0);
     if (RK_MPI_VO_SetLayerAttr(priv->vo_layer, &layer_attr) != RK_SUCCESS ||
+        RK_MPI_VO_SetLayerSpliceMode(priv->vo_layer, VO_SPLICE_MODE_RGA) != RK_SUCCESS ||
         RK_MPI_VO_EnableLayer(priv->vo_layer) != RK_SUCCESS) {
         fprintf(stderr, "rk_display: VO layer setup failed\n");
         goto out_layer;
@@ -400,6 +404,8 @@ static int rk_display_open(const hw_module_t *module, const char *id, hw_device_
                                    .pixel_format = DISPLAY_FMT_NV12,
                                    .intf = DISPLAY_INTF_MIPI,
                                    .fps = 30};
+    /* SDK 示例使用 VO dev 3；当前 RV1126B IPC50 实物板的 DSI 输出由 VO
+     * dev 0 驱动，环境变量仍允许其他板型覆盖。 */
     priv->vo_dev = rk_vo_env_int("DARKOS_VO_DEV", 0);
     priv->vo_layer = rk_vo_env_int("DARKOS_VO_LAYER", 0);
 

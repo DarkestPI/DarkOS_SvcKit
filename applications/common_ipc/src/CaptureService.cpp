@@ -274,6 +274,14 @@ bool runCaptureService(const AppOptions &options, const darkos::AppConfig &app) 
         close(signalFd);
         return false;
     }
+    if (app.display().enabled && encodedVideo->startPreview(error) != 0) {
+        SVC_LOGE(kTag, "start local display preview failed: %s", error.c_str());
+        encodedVideo->stop();
+        pipeline->stop();
+        loop->unwatchFd(signalFd);
+        close(signalFd);
+        return false;
+    }
 #endif
 
     loop->scheduleEvery(100'000'000ULL, 100'000'000ULL, [&] {

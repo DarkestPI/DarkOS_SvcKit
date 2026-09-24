@@ -62,6 +62,9 @@
 #define RK_VI_GET_TIMEOUT_MS 1000
 #define RK_CAM_MAX_INSTANCES 8
 #define RK_PREVIEW_SEND_TIMEOUT_MS 100 /* 预览送帧超时（VO 层缓冲满则丢帧） */
+#define RK_PREVIEW_VI_CHN_DEFAULT 5 /* 对齐 SDK：VI chn 5 专供本地显示 */
+#define RK_PREVIEW_VI_WIDTH 1920
+#define RK_PREVIEW_VI_HEIGHT 1080
 #define RK_ENCODED_VENC_MAX_WIDTH 3840
 #define RK_ENCODED_VENC_MAX_HEIGHT 2160
 
@@ -69,7 +72,8 @@ typedef struct rk_camera_priv {
     int idx;     /* 实例号（open id "cameraN" 的 N） */
     int vi_dev;  /* VI dev/pipe/chn：默认 dev=pipe=idx、chn=0，env 可覆盖 */
     int vi_pipe;
-    int vi_chn;
+    int vi_chn;  /* raw/capture 通道，默认 0 */
+    int encoded_vi_chn; /* 编码通道，RV1126B SDK 拓扑默认 3 */
     int type; /* camera_type_t：env DARKOS_CAMERA{idx}_TYPE=ir|white，默认 white */
 
     camera_format_t fmt; /* 请求并生效的格式（NV12） */
@@ -111,6 +115,11 @@ typedef struct rk_camera_priv {
                              * DARKOS_PREVIEW_VO_SEND=0） */
     MB_POOL prv_pool;         /* 预览拷贝缓冲池（6 块，preview_start 建） */
     int preview_fps;          /* 预览送帧节奏（DARKOS_PREVIEW_FPS，默认 15） */
+    /* 编码路径的硬件直通预览：VI chn 5 -> VO layer/chn 0。 */
+    int preview_vi_chn;
+    int preview_vi_chn_enabled;
+    int preview_bound;
+    int preview_direct;
 
     uint8_t *nv12; /* 复用缓冲（capture 与行对齐回退路径用，回调期内有效） */
     size_t nv12_size;
@@ -129,6 +138,9 @@ typedef struct rk_camera_priv {
     pthread_t thread;
     volatile int running;
 } rk_camera_priv_t;
+
+/* 编码路径在 CameraEncodedVideo 停止时也必须摘掉本地显示绑定。 */
+static int rk_camera_preview_stop(camera_device_t *dev);
 
 /* ---------------------------------------------------------------------------
  * 3A（rkaiq）：流程对齐 SDK rkipc common/isp/rv1126b/isp.c
@@ -474,7 +486,7 @@ static int rk_camera_get_format(camera_device_t *dev, camera_format_t *fmt) {
 
 static void rk_camera_encoded_cleanup(rk_camera_priv_t *priv) {
     if (priv->encoded_bound) {
-        MPP_CHN_S src = {RK_ID_VI, priv->vi_pipe, priv->vi_chn};
+        MPP_CHN_S src = {RK_ID_VI, priv->vi_pipe, priv->encoded_vi_chn};
         MPP_CHN_S dst = {RK_ID_VENC, priv->encoded_venc_chn, 0};
         RK_MPI_SYS_UnBind(&src, &dst);
         priv->encoded_bound = 0;
@@ -485,7 +497,7 @@ static void rk_camera_encoded_cleanup(rk_camera_priv_t *priv) {
         priv->encoded_venc_created = 0;
     }
     if (priv->encoded_chn_enabled) {
-        RK_MPI_VI_DisableChn(priv->vi_pipe, priv->vi_chn);
+        RK_MPI_VI_DisableChn(priv->vi_pipe, priv->encoded_vi_chn);
         priv->encoded_chn_enabled = 0;
     }
     if (priv->encoded_dev_enabled) {
@@ -568,6 +580,18 @@ static int rk_camera_encoded_start(camera_device_t *dev,
     }
     priv->encoded_dev_enabled = 1;
 
+    /* 对齐 SDK rkipc 的 rkipc_vi_dev_init：扩展通道 4/5 必须先切到 VI
+     * 扩展通道模式，之后才能在编码通道运行时启用显示通道 5。 */
+    VI_PARAM_MOD_S mod_param;
+    memset(&mod_param, 0, sizeof(mod_param));
+    mod_param.enViModType = VI_EXT_CHN_MODE;
+    mod_param.stExtChnParam.extChn[4] = 1;
+    mod_param.stExtChnParam.extChn[5] = 1;
+    if (RK_MPI_VI_SetModParam(&mod_param) != RK_SUCCESS) {
+        fprintf(stderr, "rk_camera%d: encoded VI SetModParam failed\n", priv->idx);
+        goto fail;
+    }
+
     memset(&chn_attr, 0, sizeof(chn_attr));
     chn_attr.stIspOpt.u32BufCount = RK_VI_BUF_COUNT;
     chn_attr.stIspOpt.enMemoryType = VI_V4L2_MEMORY_TYPE_DMABUF;
@@ -581,12 +605,12 @@ static int rk_camera_encoded_start(camera_device_t *dev,
     chn_attr.enCompressMode = COMPRESS_MODE_NONE;
     chn_attr.stFrameRate.s32SrcFrameRate = fps;
     chn_attr.stFrameRate.s32DstFrameRate = fps;
-    if (RK_MPI_VI_SetChnAttr(priv->vi_pipe, priv->vi_chn, &chn_attr) != 0) {
+    if (RK_MPI_VI_SetChnAttr(priv->vi_pipe, priv->encoded_vi_chn, &chn_attr) != 0) {
         fprintf(stderr, "rk_camera%d: encoded VI SetChnAttr failed (%ux%u)\n",
                 priv->idx, w, h);
         goto fail;
     }
-    if (RK_MPI_VI_EnableChn(priv->vi_pipe, priv->vi_chn) != 0) {
+    if (RK_MPI_VI_EnableChn(priv->vi_pipe, priv->encoded_vi_chn) != 0) {
         fprintf(stderr, "rk_camera%d: encoded VI EnableChn failed\n", priv->idx);
         goto fail;
     }
@@ -626,7 +650,7 @@ static int rk_camera_encoded_start(camera_device_t *dev,
         goto fail;
     }
 
-    src = (MPP_CHN_S){RK_ID_VI, priv->vi_pipe, priv->vi_chn};
+    src = (MPP_CHN_S){RK_ID_VI, priv->vi_pipe, priv->encoded_vi_chn};
     dst = (MPP_CHN_S){RK_ID_VENC, priv->encoded_venc_chn, 0};
     if (RK_MPI_SYS_Bind(&src, &dst) != RK_SUCCESS) {
         fprintf(stderr, "rk_camera%d: encoded source bind failed\n", priv->idx);
@@ -635,7 +659,7 @@ static int rk_camera_encoded_start(camera_device_t *dev,
     priv->encoded_bound = 1;
     priv->encoded_streaming = 1;
     fprintf(stderr, "rk_camera%d: encoded camera path VI(%d,%d,%d)->VENC(%d) bound, %ux%u@%u bitrate=%u\n",
-            priv->idx, priv->vi_dev, priv->vi_pipe, priv->vi_chn,
+            priv->idx, priv->vi_dev, priv->vi_pipe, priv->encoded_vi_chn,
             priv->encoded_venc_chn, w, h, fps, bitrate);
     return 0;
 
@@ -703,6 +727,7 @@ static int rk_camera_encoded_stop(camera_device_t *dev) {
     if (!priv->encoded_streaming && !priv->encoded_sys_acquired &&
         !priv->encoded_venc_created)
         return 0;
+    rk_camera_preview_stop(dev);
     rk_camera_encoded_cleanup(priv);
     return 0;
 }
@@ -846,6 +871,116 @@ static int rk_vo_layer(void) {
     return rk_env_int("DARKOS_VO_LAYER", 0);
 }
 
+/* 编码输出同时打开本地硬件预览。显示层已由 Display HAL 建好，这里只
+ * 配置 VI 的显示通道并做 SYS_Bind，不把 VO 设备生命周期重复到 Camera HAL。 */
+static int rk_camera_direct_preview_start(camera_device_t *dev, uint32_t panel_width,
+                                          uint32_t panel_height) {
+    rk_camera_priv_t *priv = (rk_camera_priv_t *)dev->priv;
+    VI_CHN_ATTR_S vi_attr;
+    VO_CHN_ATTR_S vo_attr;
+    MPP_CHN_S src;
+    MPP_CHN_S dst;
+    uint32_t source_width = panel_width;
+    uint32_t source_height = panel_height;
+    int rc;
+
+    priv->preview_vo_layer = rk_vo_layer();
+    priv->preview_vi_chn = rk_env_int("DARKOS_PREVIEW_VI_CHN", RK_PREVIEW_VI_CHN_DEFAULT);
+    if (priv->preview_vi_chn == priv->encoded_vi_chn) {
+        fprintf(stderr, "rk_camera%d: preview VI chn %d conflicts with encoded chn %d\n",
+                priv->idx, priv->preview_vi_chn, priv->encoded_vi_chn);
+        return -EINVAL;
+    }
+
+    /* 竖屏 MIPI panel 的旋转和缩放交给 VO/RGA，源帧保持 NV12。 */
+    priv->preview_rotation = rk_env_int("DARKOS_PREVIEW_ROT", ROTATION_270);
+    if (priv->preview_rotation != ROTATION_0 && priv->preview_rotation != ROTATION_90 &&
+        priv->preview_rotation != ROTATION_180 && priv->preview_rotation != ROTATION_270)
+        priv->preview_rotation = ROTATION_270;
+    /* 竖屏 panel 采用 270° 旋转时，VI 先输出旋转前的 800x480 横帧。
+     * 这样 RGA 只做旋转，不再把 1920x1080 缩放到 480x800，减少显示延迟。 */
+    if (priv->preview_rotation == ROTATION_90 || priv->preview_rotation == ROTATION_270) {
+        source_width = panel_height;
+        source_height = panel_width;
+    }
+    if (source_width < 128 || source_height < 128) {
+        source_width = RK_PREVIEW_VI_WIDTH;
+        source_height = RK_PREVIEW_VI_HEIGHT;
+    }
+    if (RK_MPI_VO_SetLayerSpliceMode(priv->preview_vo_layer, VO_SPLICE_MODE_RGA) != RK_SUCCESS) {
+        fprintf(stderr, "rk_camera%d: direct preview SetLayerSpliceMode(RGA) failed\n",
+                priv->idx);
+        return -EIO;
+    }
+    memset(&vo_attr, 0, sizeof(vo_attr));
+    vo_attr.stRect = (RECT_S){0, 0, panel_width, panel_height};
+    vo_attr.bDeflicker = RK_FALSE;
+    vo_attr.u32Priority = 1;
+    vo_attr.enRotation = (ROTATION_E)priv->preview_rotation;
+    if (RK_MPI_VO_SetChnAttr(priv->preview_vo_layer, 0, &vo_attr) != RK_SUCCESS) {
+        fprintf(stderr, "rk_camera%d: direct preview VO chn setup failed\n", priv->idx);
+        return -EIO;
+    }
+
+    memset(&vi_attr, 0, sizeof(vi_attr));
+    vi_attr.stIspOpt.u32BufCount = 3;
+    vi_attr.stIspOpt.enMemoryType = VI_V4L2_MEMORY_TYPE_DMABUF;
+    vi_attr.stIspOpt.stMaxSize.u32Width = source_width;
+    vi_attr.stIspOpt.stMaxSize.u32Height = source_height;
+    vi_attr.stSize.u32Width = source_width;
+    vi_attr.stSize.u32Height = source_height;
+    vi_attr.enPixelFormat = RK_FMT_YUV420SP;
+    vi_attr.u32Depth = 0;
+    vi_attr.enVideoFormat = VIDEO_FORMAT_LINEAR;
+    vi_attr.enCompressMode = COMPRESS_MODE_NONE;
+    vi_attr.stFrameRate.s32SrcFrameRate = priv->encoded_cfg.fps;
+    vi_attr.stFrameRate.s32DstFrameRate = priv->encoded_cfg.fps;
+    rc = RK_MPI_VI_SetChnAttr(priv->vi_pipe, priv->preview_vi_chn, &vi_attr);
+    if (rc != RK_SUCCESS) {
+        fprintf(stderr, "rk_camera%d: direct preview VI SetChnAttr failed (%d)\n",
+                priv->idx, rc);
+        return -EIO;
+    }
+    /* 当前固件的 VPSS 扩展通道默认 scl mode 为 0，必须显式选择有效算法，
+     * 否则 chn 5 的 STREAM_ON 会以“scale down algo invalid”失败。固件的
+     * 实际参数映射中 AVS 枚举值 2 对应可用的扩展通道缩放模式。 */
+    rc = RK_MPI_VI_SetChnSclMode(priv->vi_pipe, priv->preview_vi_chn,
+                                 VI_CHN_SCL_AVS_ALGO);
+    if (rc != RK_SUCCESS) {
+        fprintf(stderr, "rk_camera%d: direct preview VI SetChnSclMode failed (%d)\n",
+                priv->idx, rc);
+        return -EIO;
+    }
+    rc = RK_MPI_VI_EnableChn(priv->vi_pipe, priv->preview_vi_chn);
+    if (rc != RK_SUCCESS) {
+        fprintf(stderr, "rk_camera%d: direct preview VI EnableChn failed (%d)\n",
+                priv->idx, rc);
+        return -EIO;
+    }
+    priv->preview_vi_chn_enabled = 1;
+
+    src = (MPP_CHN_S){RK_ID_VI, priv->vi_pipe, priv->preview_vi_chn};
+    dst = (MPP_CHN_S){RK_ID_VO, priv->preview_vo_layer, 0};
+    rc = RK_MPI_SYS_Bind(&src, &dst);
+    if (rc != RK_SUCCESS) {
+        fprintf(stderr, "rk_camera%d: direct preview VI->VO bind failed (%d)\n",
+                priv->idx, rc);
+        RK_MPI_VI_DisableChn(priv->vi_pipe, priv->preview_vi_chn);
+        priv->preview_vi_chn_enabled = 0;
+        return -EIO;
+    }
+    priv->preview_bound = 1;
+    priv->preview_direct = 1;
+    priv->preview_on = 1;
+    fprintf(stderr,
+            "rk_camera%d: direct preview VI(%d,%d,%d)->VO(layer=%d,chn=0) bound, "
+            "source=%ux%u panel=%ux%u rotation=%d\n",
+            priv->idx, priv->vi_dev, priv->vi_pipe, priv->preview_vi_chn,
+            priv->preview_vo_layer, source_width, source_height,
+            panel_width, panel_height, priv->preview_rotation);
+    return 0;
+}
+
 /* 预览送帧线程：取信箱池块 → 节奏睡眠 → SendFrame → 还池块。
  * 按 preview_fps 恒定节奏送帧（VO+RGA 回收周期实测 40~90ms 抖动，30fps
  * 直送会在 VO 侧积压；稳的 15fps 比抖动的高帧率观感好——板上实测）。
@@ -946,10 +1081,13 @@ static int rk_camera_preview_start(camera_device_t *dev, uint32_t width, uint32_
     rk_camera_priv_t *priv = (rk_camera_priv_t *)dev->priv;
     VO_CHN_ATTR_S chn_attr;
 
-    if (!priv->streaming)
-        return -EINVAL; /* 须在采集 start 之后（采集线程已跑） */
+    if (!priv->streaming && !priv->encoded_streaming)
+        return -EINVAL; /* 须在 Camera start 之后 */
     if (priv->preview_on)
         return 0; /* 幂等 */
+
+    if (priv->encoded_streaming)
+        return rk_camera_direct_preview_start(dev, width, height);
 
     /* VO 视频层旋转配置（camera HAL 内聚，层归 display HAL 建）：splice RGA
      * + chn enRotation 逆时针 90°。旋转后 1080x1920 由 VOP 缩放进 panel
@@ -1009,6 +1147,21 @@ static int rk_camera_preview_start(camera_device_t *dev, uint32_t width, uint32_
 static int rk_camera_preview_stop(camera_device_t *dev) {
     rk_camera_priv_t *priv = (rk_camera_priv_t *)dev->priv;
 
+    if (priv->preview_direct) {
+        MPP_CHN_S src = {RK_ID_VI, priv->vi_pipe, priv->preview_vi_chn};
+        MPP_CHN_S dst = {RK_ID_VO, priv->preview_vo_layer, 0};
+        if (priv->preview_bound) {
+            RK_MPI_SYS_UnBind(&src, &dst);
+            priv->preview_bound = 0;
+        }
+        if (priv->preview_vi_chn_enabled) {
+            RK_MPI_VI_DisableChn(priv->vi_pipe, priv->preview_vi_chn);
+            priv->preview_vi_chn_enabled = 0;
+        }
+        priv->preview_direct = 0;
+        priv->preview_on = 0;
+        return 0;
+    }
     if (!priv->preview_on)
         return 0;
     pthread_mutex_lock(&priv->prv_mtx);
@@ -1263,6 +1416,7 @@ static int rk_camera_open(const hw_module_t *module, const char *id, hw_device_t
     priv->vi_dev = rk_camera_env_int(idx, "VI_DEV", idx);
     priv->vi_pipe = rk_camera_env_int(idx, "VI_PIPE", idx);
     priv->vi_chn = rk_camera_env_int(idx, "VI_CHN", 0);
+    priv->encoded_vi_chn = rk_camera_env_int(idx, "ENCODED_VI_CHN", 3);
     priv->encoded_venc_chn = rk_camera_env_int(idx, "VENC_CHN", idx);
 
     /* 摄像头类型：DARKOS_CAMERA{idx}_TYPE=ir|white，默认白光（全彩） */

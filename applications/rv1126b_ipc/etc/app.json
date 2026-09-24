@@ -35,5 +35,8 @@
   "iva": {
     "enabled": true,
     "model_path": "/oem/usr2/etc/models/model.int8.320x240.rv1126b.rknn"
+  },
+  "display": {
+    "enabled": true
   }
 }
